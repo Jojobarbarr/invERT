@@ -14,7 +14,7 @@ def initialize_dataset(normalized_data: list[torch.Tensor], normalized_target: l
     dataset = IrregularDataset(normalized_data, normalized_target)
 
     train_size = int(0.8 * len(dataset))
-    test_size = len(dataset) - train_size
+    test_size: int = len(dataset) - train_size
 
     train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
 
@@ -30,25 +30,21 @@ if __name__ == "__main__":
     else:
         device = torch.device("cpu")
 
-
-    #############################################
-    #            DATA PREPROCESSING             #
-    #############################################
-    min_shape: int = 10
-    max_shape: int = 100
+    min_shape: int = 5
+    max_shape: int = 20
     assert min_shape <= max_shape
 
-    dataset_size: int = 5000
-    batch_size: int = 128
-    lr: float = 0.001
+    dataset_size: int = 1000
+    batch_size: int = 2
+    lr: float = 0.0001
+    num_epochs: int = 10
 
     normalized_data, normalized_target, min_data, max_data, min_target, max_target = pre_process_data(dataset_size, min_shape, max_shape)
-
     train_dataloader, test_dataloader = initialize_dataset(normalized_data, normalized_target, batch_size)
 
     # Initialize the models
     input_dim: int = 2  # MLP input size
-    hidden_dim: list[int] = [64, 128]  # MLP hidden layers size
+    hidden_dim: list[int] = [32]  # MLP hidden layers size
     kernel_sizes: list[int] = [3, 3, 3]  # CNN kernel sizes
     num_kernels: list[int] = [16, 32, 1]  # CNN number of kernels
     assert len(kernel_sizes) == len(num_kernels)
@@ -63,27 +59,29 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Training loop
-    num_epochs = 10  # Set the number of epochs
-
     print("Training started...")
-    loss_list = []
-    test_loss_list = []
+    loss_list: list[float] = []
+    test_loss_list: list[float] = []
     for epoch in range(num_epochs):
+        # if epoch == num_epochs // 2:
+        #     optimizer = optim.Adam(model.parameters(), lr=lr * 10)
+        # if epoch == num_epochs // 2 + 1:
+        #     optimizer = optim.Adam(model.parameters(), lr=lr / 100)
         for batch, (inputs, targets) in tqdm(enumerate(train_dataloader), desc="Batch progression", total=len(train_dataloader), unit="batch"):
 
             optimizer.zero_grad()  # Clear previous gradients
 
-            batch_loss = 0
+            batch_loss: nn.MSELoss = 0
 
             # Forward pass through the MLP to get the kernels
             for input, target in zip(inputs, targets):
-                input = input.to(device)
-                target = target.to(device).unsqueeze(1)
-                input_metadata = torch.tensor([input.shape[1] / max_shape, input.shape[2] / max_shape], dtype=torch.float32).to(device)
-                output = model(input_metadata.unsqueeze(0), input.unsqueeze(1))
+                input: torch.Tensor = input.to(device)
+                target: torch.Tensor = target.to(device).unsqueeze(1)
+                input_metadata: torch.Tensor = torch.tensor([input.shape[1] / max_shape, input.shape[2] / max_shape], dtype=torch.float32).to(device)
+                output: torch.Tensor = model(input_metadata.unsqueeze(0), input.unsqueeze(1))
 
                 # Compute the loss
-                loss = criterion(output, target)
+                loss: nn.MSELoss = criterion(denormalize(output, min_target, max_target), denormalize(target, min_target, max_target)) / (input.shape[-2] * input.shape[-1])
                 batch_loss += loss
                 
             batch_loss.backward()
@@ -94,23 +92,23 @@ if __name__ == "__main__":
             optimizer.step()
 
             if batch % (len(train_dataloader) // 10) == 0:
-                test_batch_loss = 0
-                test_batch = next(iter(test_dataloader))
+                test_batch_loss: nn.MSELoss = 0
+                test_batch: list[list[torch.Tensor]] = next(iter(test_dataloader))
                 test_inputs, test_targets = test_batch
                 for test_input, test_target in zip(test_inputs, test_targets):
-                    test_input = test_input.to(device)
-                    test_target = test_target.to(device).unsqueeze(1)
-                    test_input_metadata = torch.tensor([test_input.shape[1] / max_shape, test_input.shape[2] / max_shape], dtype=torch.float32).to(device)
+                    test_input: torch.Tensor = test_input.to(device)
+                    test_target: torch.Tensor = test_target.to(device).unsqueeze(1)
+                    test_input_metadata: torch.Tensor = torch.tensor([test_input.shape[1] / max_shape, test_input.shape[2] / max_shape], dtype=torch.float32).to(device)
                     test_output = model(test_input_metadata.unsqueeze(0), test_input.unsqueeze(1))
 
                     # Compute the loss
-                    test_loss = criterion(test_output, test_target)
+                    test_loss = criterion(denormalize(test_output, min_target, max_target), denormalize(test_target, min_target, max_target))
                     test_batch_loss += test_loss
 
                 loss_list.append(batch_loss.item())
                 test_loss_list.append(test_batch_loss.item())
 
-        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}')
+        print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {batch_loss.item():.4f}')
 
     print("Training complete!")
     plt.plot(loss_list[1:], label="Train loss")

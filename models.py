@@ -43,12 +43,13 @@ class DynamicConvNet(nn.Module):
         kernels_list = [kernel_init] + [kernels[:, idx_list[i-1]:idx_list[i]].view(self.num_kernels[i], self.num_kernels[i-1], self.kernel_sizes[i], self.kernel_sizes[i]) for i in range(1, len(self.num_kernels))]
 
         # Forward pass through the convolutional layers
-        x = F.conv2d(x, kernels_list[0], padding=1)
+        x = F.conv2d(x, kernels_list[0], padding="same")
         x = F.relu(x)
         for i in range(1, len(kernels_list) - 1):
-            x = F.conv2d(x, kernels_list[i], padding=1)
+            x = F.conv2d(x, kernels_list[i], padding="same")
             x = F.relu(x)
-        x = F.conv2d(x, kernels_list[-1], padding=1)
+        x = F.conv2d(x, kernels_list[-1], padding="same")
+        x = F.relu(x)
         
         return x
 
@@ -60,7 +61,8 @@ class DynamicModel(nn.Module):
 
     def forward(self, x_meatadata: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         kernels = self.kernel_generator(x_meatadata)
-        return self.conv_net(x, kernels)
+        x = self.conv_net(x, kernels)
+        return x
 
 if __name__ == "__main__":
     # Example usage

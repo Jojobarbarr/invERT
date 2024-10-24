@@ -1,4 +1,4 @@
-from torch import tensor, cat, randn, sin, randint
+from torch import tensor, cat, randn, sin, randint, rand
 from torch.utils.data import Dataset
 
 
@@ -32,7 +32,7 @@ def target_func(x: tensor) -> tensor:
 
 def generate_data(size: int, min_shape: int, max_shape: int) -> tuple[list[tensor], list[tensor]]:
     print(f"Generating data with shapes between {min_shape} and {max_shape}...")
-    data: list[tensor] = [randn(1, randint(min_shape, max_shape, (1,)), randint(min_shape, max_shape, (1,))) for _ in range(size)]
+    data: list[tensor] = [1000 * rand(1, randint(min_shape, max_shape, (1,)), randint(min_shape, max_shape, (1,))) + 500 for _ in range(size)]
 
     print(f"Computing targets...")
     targets: list[tensor] = [target_func(data[k]) for k in range(len(data))]
