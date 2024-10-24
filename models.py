@@ -4,81 +4,87 @@ import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
 
-# MLP model to generate kernels for 3 convolutional layers
+# Fully connected network to generate the kernels
 class KernelGeneratorMLP(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int, kernel_sizes: int, num_kernels: int):
+    def __init__(self, input_dim: int, hidden_dim: list[int], num_kernels: list[int], kernel_sizes: list[int]):
         super(KernelGeneratorMLP, self).__init__()
-        self.input_channels: list[int] = [1] + num_kernels[:-1]  # Number of input channels for each layer
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, sum(k * k * c * n for k, c, n in zip(kernel_sizes, self.input_channels, num_kernels)))  # Combined output for all conv layers
+
+        # Define the fully connected layers
+        self.fc_list = nn.ModuleList()
+        self.fc_first = nn.Linear(input_dim, hidden_dim[0])
+        for i in range(len(hidden_dim) - 1):
+            self.fc_list.append(nn.Linear(hidden_dim[i], hidden_dim[i + 1]))
+        self.fc_last = nn.Linear(hidden_dim[-1], sum(k * k * c * n for k, c, n in zip(kernel_sizes, [1] + num_kernels[:-1], num_kernels)))  # Combined output for all conv layers
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = F.relu(self.fc_first(x))
+        for fc in self.fc_list:
+            x = F.relu(fc(x))
+        x = self.fc_last(x)
         return x
 
-# Fully convolutional network with 3 layers
+# Fully convolutional network
 class DynamicConvNet(nn.Module):
     def __init__(self, in_channels: int, num_kernels: list[int], kernel_sizes: list[int]):
         super(DynamicConvNet, self).__init__()
-        self.kernel_sizes: list[int] = kernel_sizes
         self.in_channels: int = in_channels
-        self.input_channels: list[int] = [1] + num_kernels[:-1]
         self.num_kernels: list[int] = num_kernels
-
-        # Define convolutional layers without weights (they will be set dynamically)
-        self.conv1 = nn.Conv2d(in_channels, num_kernels[0], kernel_size=kernel_sizes[0], bias=False, padding=1)
-        self.conv2 = nn.Conv2d(num_kernels[0], num_kernels[1], kernel_size=kernel_sizes[1], bias=False, padding=1)
-        self.conv3 = nn.Conv2d(num_kernels[1], 1, kernel_size=kernel_sizes[2], bias=False, padding=1)  # Output 1 channel
-
+        self.kernel_sizes: list[int] = kernel_sizes
 
     def forward(self, x, kernels):
-        # Split kernels for the three layers
-        idx1 = self.num_kernels[0] * self.input_channels[0] * self.kernel_sizes[0] * self.kernel_sizes[0]
-        idx2 = idx1 + self.num_kernels[1] * self.input_channels[1] * self.kernel_sizes[1] * self.kernel_sizes[1]
+        idx_list = []
+        for layer_index in range(len(self.num_kernels)):
+            if layer_index == 0:
+                idx_list.append(self.num_kernels[layer_index] * self.kernel_sizes[layer_index] * self.kernel_sizes[layer_index])
+            else:
+                idx_list.append(idx_list[layer_index - 1] + self.num_kernels[layer_index] * self.num_kernels[layer_index-1] * self.kernel_sizes[layer_index] * self.kernel_sizes[layer_index])
 
-        kernels1 = kernels[:, :idx1].view(self.num_kernels[0], self.input_channels[0], self.kernel_sizes[0], self.kernel_sizes[0])
-        kernels2 = kernels[:, idx1:idx2].view(self.num_kernels[1], self.input_channels[1], self.kernel_sizes[1], self.kernel_sizes[1])
-        kernels3 = kernels[:, idx2:].view(self.num_kernels[2], self.input_channels[2], self.kernel_sizes[2], self.kernel_sizes[2])
+        kernel_init = kernels[:, :idx_list[0]].view(self.num_kernels[0], 1, self.kernel_sizes[0], self.kernel_sizes[0])
+        kernels_list = [kernel_init] + [kernels[:, idx_list[i-1]:idx_list[i]].view(self.num_kernels[i], self.num_kernels[i-1], self.kernel_sizes[i], self.kernel_sizes[i]) for i in range(1, len(self.num_kernels))]
 
-        x = F.conv2d(x, kernels1, padding=1)
-        x = F.tanh(x)
-        x = F.conv2d(x, kernels2, padding=1)
-        x = F.tanh(x)
-        x = F.conv2d(x, kernels3, padding=1)
-
+        # Forward pass through the convolutional layers
+        x = F.conv2d(x, kernels_list[0], padding=1)
+        x = F.relu(x)
+        for i in range(1, len(kernels_list) - 1):
+            x = F.conv2d(x, kernels_list[i], padding=1)
+            x = F.relu(x)
+        x = F.conv2d(x, kernels_list[-1], padding=1)
+        
         return x
+
+class DynamicModel(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: list[int], num_kernels: list[int], kernel_sizes: list[int], in_channels: int):
+        super(DynamicModel, self).__init__()
+        self.kernel_generator = KernelGeneratorMLP(input_dim, hidden_dim, num_kernels, kernel_sizes)
+        self.conv_net = DynamicConvNet(in_channels, num_kernels, kernel_sizes)
+
+    def forward(self, x_meatadata: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        kernels = self.kernel_generator(x_meatadata)
+        return self.conv_net(x, kernels)
 
 if __name__ == "__main__":
     # Example usage
-    input_dim = 2  # MLP input size
-    hidden_dim = 64
-    kernel_sizes = [3, 3, 3]  # Kernel sizes for the three conv layers
-    num_kernels = [16, 32, 1]  # Number of kernels (channels) for each layer; last layer outputs 1 channel
+    input_dim: int = 2  # MLP input size
+    hidden_dim: list[int] = [64, 128]  # MLP hidden layers size
+    kernel_sizes: list[int] = [3, 3, 3]  # CNN kernel sizes
+    num_kernels: list[int] = [16, 32, 1]  # CNN number of kernels
+    assert len(kernel_sizes) == len(num_kernels)
+    assert num_kernels[-1] == 1
 
     # Initialize the models
-    mlp = KernelGeneratorMLP(input_dim, hidden_dim, kernel_sizes, num_kernels)
-    conv_net = DynamicConvNet(in_channels=1, num_kernels=num_kernels, kernel_sizes=kernel_sizes)
-    print(f"conv_net: {conv_net}")
+    model = DynamicModel(input_dim, hidden_dim, num_kernels, kernel_sizes, 1)
+    print(f"Model: {model}")
 
     # Input data
-    mlp_input = torch.randn(1, input_dim)  # Input for MLP
-    conv_input = torch.randn(1, 1, 28, 28)  # Example 2D input for the convolutional network
+    input_data = torch.randn(1, 2)  # Metadata for the MLP
+    input_image = torch.randn(1, 1, 28, 28)  # Example 2D input for the convolutional network)
 
     # Forward pass through MLP to get the kernels
-    generated_kernels = mlp(mlp_input)
+    output = model(input_data, input_image)
 
-    # Set the generated kernels as weights for the convolutional network
-
-    # Forward pass through the convolutional network
-    output = conv_net(conv_input, generated_kernels)
-
-    print(f"conv_input.shape: {conv_input.shape}")
     print(f"output.shape: {output.shape}")  # The output will have 1 channel
 
-    plt.imshow(conv_input[0, 0].detach().numpy(), cmap='gray')
+    plt.imshow(input_image[0, 0].detach().numpy(), cmap='gray')
     plt.show()
     plt.imshow(output[0, 0].detach().numpy(), cmap='gray')
     plt.show()
