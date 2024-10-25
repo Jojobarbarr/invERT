@@ -30,6 +30,7 @@ class DynamicConvNet(nn.Module):
         self.in_channels: int = in_channels
         self.num_kernels: list[int] = num_kernels
         self.kernel_sizes: list[int] = kernel_sizes
+        self.bn_list = nn.ModuleList([nn.BatchNorm2d(num_k) for num_k in self.num_kernels])
 
     def forward(self, x, kernels):
         idx_list = []
@@ -44,13 +45,17 @@ class DynamicConvNet(nn.Module):
 
         # Forward pass through the convolutional layers
         x = F.conv2d(x, kernels_list[0], padding="same")
-        x = F.relu(x)
+        # x = F.relu(x)
+        x = F.relu(self.bn_list[0](x))
         for i in range(1, len(kernels_list) - 1):
             x = F.conv2d(x, kernels_list[i], padding="same")
-            x = F.relu(x)
+            # x = F.relu(x)
+            x = F.relu(self.bn_list[i](x))
         x = F.conv2d(x, kernels_list[-1], padding="same")
-        x = F.relu(x)
-        
+        # x = F.relu(x)
+        # x = F.relu(self.bn_list[-1](x))
+        x = F.tanh(x)
+        # x = F.tanh(self.bn_list[-1](x))
         return x
 
 class DynamicModel(nn.Module):
@@ -63,6 +68,13 @@ class DynamicModel(nn.Module):
         kernels = self.kernel_generator(x_meatadata)
         x = self.conv_net(x, kernels)
         return x
+
+
+def init_weights(m):
+    if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+        nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
 
 if __name__ == "__main__":
     # Example usage
