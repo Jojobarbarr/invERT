@@ -45,8 +45,8 @@ if __name__ == "__main__":
     noise: float = 0
 
     dataset_size: int = 1000
-    batch_size: int = 2
-    initial_lr: float = 0.0016
+    batch_size: int = 1
+    initial_lr: float = 0.0004
     lr_decrease_factor: float = 0.25
     patience: int = 5
     num_epochs: int = 50
@@ -57,10 +57,10 @@ if __name__ == "__main__":
 
     # Initialize the models
     input_dim: int = 2  # MLP input size
-    hidden_dim: list[int] = [16]  # MLP hidden layers size
+    hidden_dim: list[int] = [32]  # MLP hidden layers size
     assert len(hidden_dim) > 0
-    kernel_sizes: list[int] = [3, 3]  # CNN kernel sizes
-    num_kernels: list[int] = [32, 1]  # CNN number of kernels
+    kernel_sizes: list[int] = [3, 3, 3, 3]  # CNN kernel sizes
+    num_kernels: list[int] = [32, 64, 32, 1]  # CNN number of kernels
     assert len(kernel_sizes) == len(num_kernels)
     assert num_kernels[-1] == 1
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                 batch_loss.backward()
 
                 # Gradient clipping
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
                 # Check if there are any None gradients
                 # for name, param in model.named_parameters():
