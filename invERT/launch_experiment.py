@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from json import load as json_load
 from pathlib import Path
 from config.configuration import Config
+from 
 
 def parse_arguments():
     parser = ArgumentParser(description="Launch an experiment with a specified configuration file.")
@@ -32,11 +33,10 @@ def main():
         return
     print(f"Successfully saved updated configuration file to {config.experiment.output_folder / 'config.json'}")
 
-    # Launch train.py with the updated config
-    # subprocess.run(["python", "train.py", "--config", temp_config_path])
+    for repetition in range(config.experiment.repetitions):
+        print(f"Starting repetition {repetition + 1} of experiment: {config.experiment.experiment_name}")
+        # Run the experiment
 
-    # Clean up the temporary config file
-    # os.remove(temp_config_path)
 
 if __name__ == "__main__":
     main()
