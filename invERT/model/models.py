@@ -60,6 +60,14 @@ class DynamicConvNet(nn.Module):
 
 class DynamicModel(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: list[int], num_kernels: list[int], kernel_sizes: list[int], in_channels: int):
+        """
+        :param input_dim: The input dimension of the metadata
+        :param hidden_dim: The hidden layer sizes for the MLP
+        :param num_kernels: The number of kernels for each convolutional layer
+        :param kernel_sizes: The kernel sizes for each convolutional layer
+        :param in_channels: The number of input channels for the convolutional network
+
+        """
         super(DynamicModel, self).__init__()
         self.kernel_generator = KernelGeneratorMLP(input_dim, hidden_dim, num_kernels, kernel_sizes)
         self.conv_net = DynamicConvNet(in_channels, num_kernels, kernel_sizes)
@@ -75,6 +83,8 @@ def init_weights(m):
         nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
         if m.bias is not None:
             nn.init.zeros_(m.bias)
+
+
 
 if __name__ == "__main__":
     # Example usage

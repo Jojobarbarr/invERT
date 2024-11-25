@@ -1,4 +1,4 @@
-from json import dump as json_dump
+from json5 import dump as json_dump
 from pathlib import Path
 
 class Config:
@@ -24,8 +24,9 @@ class Config:
         python_type = self._get_python_type(expected_type)
         try:
             value = python_type(value)
-        except ValueError:
-            raise ValueError(f"Key '{key}' expected {expected_type}, got {value}")
+        except ValueError as e:
+            raise ValueError(f"\nKey '{key}' expected {expected_type}, got value {value} of type {type(value)}\n")
+            return None
         return value
     
     def _get_python_type(self, type_str: str) -> type:
@@ -69,10 +70,10 @@ class Config:
         try:
             self.experiment.output_folder.mkdir(parents=True)
         except FileExistsError:
-            keep_going: str = input(f"Output folder already exists: {self.experiment.output_folder}, do you want to continue? (y/n) ")
+            keep_going: str = input(f"Output folder already exists here {self.experiment.output_folder.resolve()}. Do you want to continue? (y/n) ")
             if keep_going.lower() != 'y':
                 return False
-        with open(self.experiment.output_folder / "config.json", 'w', encoding="utf8") as f:
+        with open(self.experiment.output_folder / "config.json5", 'w', encoding="utf8") as f:
             json_dump(to_dict(self), f, indent=2)
         return True
 

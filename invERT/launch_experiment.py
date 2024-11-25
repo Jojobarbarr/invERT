@@ -1,8 +1,8 @@
 from argparse import ArgumentParser
-from json import load as json_load
+from json5 import load as json_load
 from pathlib import Path
 from config.configuration import Config
-from 
+
 
 def parse_arguments():
     parser = ArgumentParser(description="Launch an experiment with a specified configuration file.")
@@ -21,7 +21,7 @@ def main():
     except FileNotFoundError:
         print(f"Configuration file not found: {args.config_file}, exiting.")
         return
-    print(f"Successfully loaded configuration file: {args.config_file}")
+    print(f"\nSuccessfully loaded configuration file: {args.config_file}\n")
 
     # Process overrides
     overrides: dict[str: str] = {overriden_arguments.split('=')[0]: overriden_arguments.split('=')[1] for overriden_arguments in args.override}
@@ -29,13 +29,14 @@ def main():
 
     # Save the updated config to the experiment result folder
     if not config.save():
-        print(f"Failed to save configuration file to {config.experiment.output_folder}, exiting.")
+        print(f"\nFailed to save configuration file to {config.experiment.output_folder.resolve()}, exiting.")
         return
-    print(f"Successfully saved updated configuration file to {config.experiment.output_folder / 'config.json'}")
+    print(f"\nSuccessfully saved updated configuration file to {config.experiment.output_folder / 'config.json5'}\n")
 
     for repetition in range(config.experiment.repetitions):
         print(f"Starting repetition {repetition + 1} of experiment: {config.experiment.experiment_name}")
         # Run the experiment
+        # run_experiment(config)
 
 
 if __name__ == "__main__":
