@@ -1,13 +1,17 @@
+from time import perf_counter
+start_time = perf_counter()
 print("Importing PyTorch...")
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+print(f"PyTorch imported in {perf_counter() - start_time:.2f} seconds")
+
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from models import DynamicModel, init_weights
+from model.models import DynamicModel, init_weights
 from data import IrregularDataset, custom_collate_fn, pre_process_data, denormalize
 
 def initialize_dataset(normalized_data: list[torch.Tensor], normalized_target: list[torch.Tensor], batch_size: int) -> tuple[DataLoader, DataLoader]:
