@@ -33,8 +33,6 @@ def main():
         return
     print(f"\nSuccessfully saved updated configuration file to {config.experiment.output_folder / 'config.json5'}\n")
 
-    for repetition in range(config.experiment.repetitions):
-        print(f"Starting repetition {repetition + 1} of experiment: {config.experiment.experiment_name}")
         # Run the experiment
         # run_experiment(config)
 

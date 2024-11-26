@@ -54,8 +54,8 @@ class Config:
                     sub_config = getattr(sub_config, sub_key)
             setattr(sub_config, keys[-1], value)
     
-    def save(self):
-        def to_dict(obj):
+    def save(self) -> bool:
+        def to_dict(obj: dict) -> dict:
             """Recursively convert Config objects to dictionaries."""
             if isinstance(obj, Config):
                 return {key: to_dict(value) for key, value in obj.__dict__.items()}
@@ -67,6 +67,9 @@ class Config:
                 return {key: to_dict(value) for key, value in obj.items()}
             return obj
         
+        
+        if not self.check():
+            return False
         try:
             self.experiment.output_folder.mkdir(parents=True)
         except FileExistsError:
@@ -75,6 +78,25 @@ class Config:
                 return False
         with open(self.experiment.output_folder / "config.json5", 'w', encoding="utf8") as f:
             json_dump(to_dict(self), f, indent=2)
+        return True
+    
+    def check(self) -> bool:
+        """Check if the configuration is valid."""
+        limit: float = 0.9
+        assert self.dataset.test_split + self.dataset.validation_split < limit, f"The sum of test_split and validation_split must be less than {limit}. You have a test_split = {self.dataset.test_split} and a validation_split = {self.dataset.validation_split} (sum is {self.dataset.test_split + self.dataset.validation_split}"
+        
+        output_filter: int = 1
+        assert self.model.cnn.conv_layers[-1].filters == output_filter, f"The number of filters in the last convolutional layer must be {output_filter}. You have {self.model.cnn.conv_layers[-1].filters}"
+        
+        implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
+        assert self.training.optimizer in implemented_optimizers, f"Optimizer must be one of {implemented_optimizers}. You have {self.training.optimizer}"
+        
+        implemented_training_losses: list[str] = ["mse", "l1"]
+        assert self.training.loss in implemented_training_losses, f"Loss must be one of {implemented_training_losses}. You have {self.training.loss}"
+        
+        implemented_lr_schedulers: list[str] = ["plateau"]
+        assert self.training.lr_scheduler.type in implemented_lr_schedulers, f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. You have {self.training.lr_scheduler.type}"
+        
         return True
 
 if __name__ == "__main__":

@@ -14,26 +14,6 @@ import matplotlib.pyplot as plt
 from model.models import DynamicModel, init_weights
 from data import IrregularDataset, custom_collate_fn, pre_process_data, denormalize
 
-def initialize_dataset(normalized_data: list[torch.Tensor], normalized_target: list[torch.Tensor], batch_size: int) -> tuple[DataLoader, DataLoader]:
-    print(f"Initializing dataset, dataloader and models...")
-    dataset = IrregularDataset(normalized_data, normalized_target)
-
-    train_size = int(0.8 * len(dataset))
-    test_size: int = len(dataset) - train_size
-
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
-
-    return train_dataloader, test_dataloader
-
-def initialize_dataset_val(normalized_data_val: list[torch.Tensor], normalized_target_val: list[torch.Tensor], batch_size: int) -> DataLoader:
-    dataset_val = IrregularDataset(normalized_data_val, normalized_target_val)
-    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
-
-    return dataloader_val
-
 
 if __name__ == "__main__":
 
