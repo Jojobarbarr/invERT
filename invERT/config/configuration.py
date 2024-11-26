@@ -24,9 +24,8 @@ class Config:
         python_type = self._get_python_type(expected_type)
         try:
             value = python_type(value)
-        except ValueError as e:
+        except ValueError as _:
             raise ValueError(f"\nKey '{key}' expected {expected_type}, got value {value} of type {type(value)}\n")
-            return None
         return value
     
     def _get_python_type(self, type_str: str) -> type:
@@ -52,7 +51,8 @@ class Config:
                     sub_config = getattr(sub_config, sub_key)[int(index)]
                 else:
                     sub_config = getattr(sub_config, sub_key)
-            setattr(sub_config, keys[-1], value)
+            python_type: type = type(getattr(sub_config, keys[-1]))
+            setattr(sub_config, keys[-1], python_type(value))
     
     def save(self) -> bool:
         def to_dict(obj: dict) -> dict:
@@ -83,20 +83,22 @@ class Config:
     def check(self) -> bool:
         """Check if the configuration is valid."""
         limit: float = 0.9
-        assert self.dataset.test_split + self.dataset.validation_split < limit, f"The sum of test_split and validation_split must be less than {limit}. You have a test_split = {self.dataset.test_split} and a validation_split = {self.dataset.validation_split} (sum is {self.dataset.test_split + self.dataset.validation_split}"
+        assert self.dataset.test_split + self.dataset.validation_split < limit, f"The sum of test_split and validation_split must be less than {limit}. You have a test_split = {self.dataset.test_split} and a validation_split = {self.dataset.validation_split} (sum is {self.dataset.test_split + self.dataset.validation_split}."
         
         output_filter: int = 1
-        assert self.model.cnn.conv_layers[-1].filters == output_filter, f"The number of filters in the last convolutional layer must be {output_filter}. You have {self.model.cnn.conv_layers[-1].filters}"
+        assert self.model.cnn.conv_layers[-1].filters == output_filter, f"The number of filters in the last convolutional layer must be {output_filter}. You have {self.model.cnn.conv_layers[-1].filters}."
         
         implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
-        assert self.training.optimizer in implemented_optimizers, f"Optimizer must be one of {implemented_optimizers}. You have {self.training.optimizer}"
+        assert self.training.optimizer in implemented_optimizers, f"Optimizer must be one of {implemented_optimizers}. You have {self.training.optimizer}."
         
         implemented_training_losses: list[str] = ["mse", "l1"]
-        assert self.training.loss in implemented_training_losses, f"Loss must be one of {implemented_training_losses}. You have {self.training.loss}"
+        assert self.training.loss_function in implemented_training_losses, f"Loss must be one of {implemented_training_losses}. You have {self.training.loss_function}"
         
         implemented_lr_schedulers: list[str] = ["plateau"]
-        assert self.training.lr_scheduler.type in implemented_lr_schedulers, f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. You have {self.training.lr_scheduler.type}"
+        assert self.training.lr_scheduler.type in implemented_lr_schedulers, f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. You have {self.training.lr_scheduler.type}."
         
+        iteration_per_epoch: int = (self.dataset.num_samples * (1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size
+        assert self.logging.print_points <  iteration_per_epoch, f"print_points must be less than the number of iterations in an epoch. You have {self.logging.print_points} for {iteration_per_epoch} iterations per epoch."
         return True
 
 if __name__ == "__main__":

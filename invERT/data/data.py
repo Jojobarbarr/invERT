@@ -63,11 +63,12 @@ def generate_data(size: int, min_shape: int, max_shape: int, noise: float) -> li
         for _ in range(size)
     ]
 
-def pre_process_data(data: list[tuple[Tensor, Tensor]]) -> tuple[list[Tensor], list[Tensor], float, float, float, float]:
+def pre_process_data(data: list[tuple[Tensor, Tensor]]) -> tuple[list[Tensor], list[Tensor], int, float, float, float, float]:
     train_data, train_targets = zip(*data)
     logging.info("Computing global min and max for normalization...")
     min_data, max_data = get_min_and_max(train_data)
     min_target, max_target = get_min_and_max(train_targets)
+    max_input_shape = max(max(sample.shape[1:3]) for sample in train_data)
 
     logging.info("Normalizing data and targets...")
     normalize_list = lambda data, min_val, max_val: [normalize(sample, min_val, max_val) for sample in data]
@@ -77,6 +78,7 @@ def pre_process_data(data: list[tuple[Tensor, Tensor]]) -> tuple[list[Tensor], l
 
     return (
         normalized_train_data, normalized_train_targets,
+        max_input_shape,
         min_data, max_data,
         min_target, max_target,
     )
@@ -94,7 +96,7 @@ if __name__ == "__main__":
     start_time = perf_counter()
     (
         normalized_data, normalized_target,
-        min_data, max_data, min_target, max_target
+        max_input_shape, min_data, max_data, min_target, max_target
     ) = pre_process_data(data)
     logging.info(f"Preprocessing took {perf_counter() - start_time:.4f} seconds.")
     # Debug output
