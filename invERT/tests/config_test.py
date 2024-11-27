@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from json5 import load as json_load
 
-CONFIG_FILE = Path("invERT/tests/config_test.json5")
+CONFIG_FILE = Path(f'{__file__}').parent / "config_test.json5"
 with open(CONFIG_FILE, mode='r', encoding="utf8") as config_file:
     CONFIG_DICT: dict = json_load(config_file)
 
