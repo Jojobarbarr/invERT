@@ -26,6 +26,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        if python -c "import torch; print(torch.cuda.is_available())" | grep True; then
+          echo "GPU detected, installing PyTorch with CUDA..."
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+        else
+          echo "No GPU detected, installing CPU-only PyTorch..."
+          pip install -r requirements.txt
+        fi
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8
