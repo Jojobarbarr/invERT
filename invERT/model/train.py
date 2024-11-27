@@ -92,22 +92,50 @@ def print_model_results(model_list: list[DynamicModel], val_dataloader: DataLoad
     with no_grad():
         model.eval()
         val_batch: list[list[Tensor]] = next(iter(val_dataloader))
+
         val_inputs, val_targets = val_batch
-        for val_input, val_target in zip(val_inputs, val_targets):
-            val_input: Tensor = val_input.to(device)
-            val_target: Tensor = val_target.to(device).unsqueeze(1)
-            val_input_metadata: Tensor = tensor([val_input.shape[1] / max_input_shape, val_input.shape[2] / max_input_shape], dtype=float32).to(device)
-            val_output = model(val_input_metadata.unsqueeze(0), val_input.unsqueeze(1))
 
-            # Denormalize the data
-            val_input = denormalize(val_input, min_data, max_data)
-            val_target = denormalize(val_target, min_target, max_target)
-            val_output = denormalize(val_output[:, :, 1:-1, 1:-1], min_target, max_target)
+        val_input, val_target = val_inputs[0], val_targets[0]
+    
+        val_input: Tensor = val_input.to(device)
+        val_target: Tensor = val_target.to(device).unsqueeze(1)
+        val_input_metadata: Tensor = tensor([val_input.shape[1] / max_input_shape, val_input.shape[2] / max_input_shape], dtype=float32).to(device)
+        val_output: Tensor = model(val_input_metadata.unsqueeze(0), val_input.unsqueeze(1))
 
-            # Plot the data
-            plt.imshow(val_input[0, 0].detach().cpu().numpy(), cmap='gray')
-            plt.show()
-            plt.imshow(val_target[0, 0].detach().cpu().numpy(), cmap='gray')
-            plt.show()
-            plt.imshow(val_output[0, 0].detach().cpu().numpy(), cmap='gray')
-            plt.show()
+        # Denormalize the data
+        val_target: np.ndarray[float, float] = denormalize(val_target[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+        val_output: np.ndarray[float, float] = denormalize(val_output[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+
+        print(f"target shape: {val_target.shape}, output shape: {val_output.shape}")
+        error_map = np.abs(val_target - val_output) / val_target
+
+        # Create subplots: 1 row, 3 columns
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+        # Normalize target and output for consistent scaling
+        vmin, vmax = min(val_target.min(), val_output.min()), max(val_target.max(), val_output.max())
+
+        # Plot the target image
+        im0 = axes[0].imshow(val_target, cmap='gray', vmin=vmin, vmax=vmax)
+        axes[0].set_title("Target")
+        axes[0].axis('on')
+        cbar0 = fig.colorbar(im0, ax=axes[0], orientation='vertical')
+        cbar0.set_label('Value')
+
+        # Plot the output image
+        im1 = axes[1].imshow(val_output, cmap='gray', vmin=vmin, vmax=vmax)
+        axes[1].set_title("Output")
+        axes[1].axis('on')
+        cbar1 = fig.colorbar(im1, ax=axes[1], orientation='vertical')
+        cbar1.set_label('Value')
+
+        # Plot the error map
+        im2 = axes[2].imshow(error_map, cmap='hot')
+        axes[2].set_title("Error Map")
+        axes[2].axis('on')
+        cbar2 = fig.colorbar(im2, ax=axes[2], orientation='vertical')
+        cbar2.set_label('Relative Error')
+
+        # Adjust layout to fit everything neatly
+        plt.tight_layout()
+        plt.show()

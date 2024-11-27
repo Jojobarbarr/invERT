@@ -74,16 +74,18 @@ def main(config: Config):
 
     model, optimizer, scheduler = init(config, mlp_config.input_size, mlp_config.hidden_layers, num_filters, kernel_sizes, cnn_config.input_channels, device)
 
-    loss_array: np.ndarray[np.ndarray[float]] = np.zeros((config.experiment.repetitions, config.logging.print_points))
-    test_loss_array: np.ndarray[np.ndarray[float]] = np.zeros((config.experiment.repetitions, config.logging.print_points))
-    model_list: list[DynamicModel] = []
-
     # Print and logging
     logging_config: Config = config.logging
     print_points: int = len(train_dataloader) // logging_config.print_points
+    total_print_points: int = logging_config.print_points + ((len(train_dataloader) % logging_config.print_points) // print_points)
     logging.debug(f"len(train_dataloader): {len(train_dataloader)}")
     logging.debug(f"logging_config.print_points: {logging_config.print_points}")
     logging.debug(f"Print points: {print_points}")
+
+    loss_array: np.ndarray[np.ndarray[float]] = np.zeros((config.experiment.repetitions, total_print_points))
+    test_loss_array: np.ndarray[np.ndarray[float]] = np.zeros((config.experiment.repetitions, total_print_points))
+    model_list: list[DynamicModel] = []
+
     ##### EXPERIMENT LOOP #####
     for repetition in range(config.experiment.repetitions):
         print(f"\nStarting repetition {repetition + 1}/{config.experiment.repetitions} of experiment: {config.experiment.experiment_name}")

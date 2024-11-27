@@ -34,9 +34,9 @@ def initialize_datasets(data: list[Tensor], target: list[Tensor], batch_size: in
 
     train_dataset, test_dataset, val_dataset = random_split(dataset, [train_size, test_size, val_size])
 
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
-    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True, drop_last=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True, drop_last=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, collate_fn=custom_collate_fn, shuffle=True, drop_last=True)
 
     return train_dataloader, test_dataloader, val_dataloader
 
