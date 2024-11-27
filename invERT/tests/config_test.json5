@@ -1,0 +1,42 @@
+{
+    "model": {
+        "cnn": {
+            "input_channels": {
+                "value": 1,
+                "type": "int"
+            },
+            "output": {
+                "value": "./output",
+                "type": "Path"
+            },
+            "biais_enabled": {
+                "value": false,
+                "type": "bool"
+            },
+            "conv_layers": [
+                {
+                    "filters": {
+                        "value": 8,
+                        "type": "int"
+                    },
+                    "filters_name": ["conv1", "conv2", "conv3"],
+                    "padding": {
+                        "value": "same",
+                        "type": "str"
+                    }
+                },
+                {
+                    "filters": {
+                        "value": 1, // /!\ The last layer must have only 1 filter
+                        "type": "int"
+                    },
+                    "filters_name": ["conv1", "conv2", "conv3"],
+                    "padding": {
+                        "value": "same",
+                        "type": "str"
+                    }
+                }
+            ]
+        }
+    }
+}

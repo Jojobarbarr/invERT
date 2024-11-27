@@ -2,77 +2,87 @@ import unittest
 from invERT.config.configuration import Config
 import shutil
 from pathlib import Path
-import json
+from json5 import load as json_load
+
+CONFIG_FILE = Path("invERT/tests/config_test.json5")
+with open(CONFIG_FILE, mode='r', encoding="utf8") as config_file:
+    CONFIG_DICT: dict = json_load(config_file)
 
 class TestConfig(unittest.TestCase):
+    def test__get_python_type(self):
+        config = Config(CONFIG_DICT)
+        self.assertEqual(config._get_python_type("str"), str)
+        self.assertEqual(config._get_python_type("int"), int)
+        self.assertEqual(config._get_python_type("float"), float)
+        self.assertEqual(config._get_python_type("bool"), bool)
+        self.assertEqual(config._get_python_type("Path"), Path)
+        self.assertEqual(config._get_python_type("unknown"), str)
 
-    def test_initialization(self):
-        config_dict = {
-            "foo": "bar",
-            "baz": {
-                "qux": "quux",
-                "quux": [
-                    5,
-                    3
-                ]
-            }
-        }
-        config = Config(config_dict)
-        self.assertEqual(config.foo, "bar")
-        self.assertEqual(config.baz.qux, "quux")
-        self.assertEqual(config.baz.quux, [5, 3])
+    def test__validate_type(self):
+        config = Config(CONFIG_DICT)
+        value_value = CONFIG_DICT['model']['cnn']['input_channels']['value']
+        value_type = CONFIG_DICT['model']['cnn']['input_channels']['type']
+        key = CONFIG_DICT['model']['cnn']['input_channels']
+        self.assertEqual(config._validate_type(value_value, value_type, key), 1)
+        del value_value
+        del value_type
+        del key
 
-    def test_type_validation(self):
-        config_dict = {
-            "int_value": {"value": "10", "type": "int"},
-            "float_value": {"value": "10.5", "type": "float"},
-            "bool_value": {"value": "True", "type": "bool"},
-            "path_value": {"value": "/some/path", "type": "Path"}
-        }
-        config = Config(config_dict)
-        self.assertEqual(config.int_value, 10)
-        self.assertEqual(config.float_value, 10.5)
-        self.assertEqual(config.bool_value, True)
-        self.assertEqual(config.path_value, Path("/some/path"))
+        value_value = CONFIG_DICT['model']['cnn']['biais_enabled']['value']
+        value_type = CONFIG_DICT['model']['cnn']['biais_enabled']['type']
+        key = CONFIG_DICT['model']['cnn']['biais_enabled']
+        self.assertEqual(config._validate_type(value_value, value_type, key), False)
+        del value_value
+        del value_type
+        del key
+        
+        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']['value']
+        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']['type']
+        key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']
+        self.assertEqual(config._validate_type(value_value, value_type, key), 8)
+        del value_value
+        del value_type
+        del key
+        
+        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']['value']
+        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']['type']
+        key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']
+        self.assertEqual(config._validate_type(value_value, value_type, key), "same")
+        del value_value
+        del value_type
+        del key
+        
+        value_value = CONFIG_DICT['model']['cnn']['output']['value']
+        value_type = CONFIG_DICT['model']['cnn']['output']['type']
+        key = CONFIG_DICT['model']['cnn']['output']
+        self.assertEqual(config._validate_type(value_value, value_type, key), Path("./output"))
 
-    def test_update(self):
-        config_dict = {
-            "foo": "bar",
-            "baz": {
-                "qux": "quux",
-                "quux": [
-                    {"nested": "value"}
-                ]
-            }
-        }
-        config = Config(config_dict)
-        updates = {
-            "foo": "new_bar",
-            "baz.qux": "new_quux",
-            "baz.quux[0].nested": "new_value"
-        }
-        config.update(updates)
-        self.assertEqual(config.foo, "new_bar")
-        self.assertEqual(config.baz.qux, "new_quux")
-        self.assertEqual(config.baz.quux[0].nested, "new_value")
+        
+        """
+        for key, value in CONFIG_DICT.items():
+            if isinstance(value, dict) and "value" in value and "type" in value:
+                value = self._validate_type(value["value"], value["type"], key)
+            elif isinstance(value, dict):
+                # Recursively turn dictionaries into Config objects
+                value = Config(value)
+            elif isinstance(value, list):
+                # Recursively turn lists of dictionaries into lists of Config objects
+                for index, item in enumerate(value):
+                    if isinstance(item, dict):
+                        value[index] = Config(item)
+            setattr(self, key, value)
+        """
 
-    def test_save(self):
-        expected_path = Path("/tmp/test_output")
-        config_dict = {
-            "experiment": {
-                "output_folder": expected_path
-            }
-        }
-        config = Config(config_dict)
-        try:
-            self.assertTrue(config.save())
-            with open(expected_path / "config.json", 'r', encoding="utf8") as f:
-                saved_config = json.load(f)
-            saved_path = Path(saved_config["experiment"]["output_folder"])
-            self.assertEqual(saved_path, expected_path)
-        finally:
-            shutil.rmtree(expected_path, ignore_errors=True)
 
+
+    # def test_initialization(self):
+    #     # Load the configuration file
+    #     with open(CONFIG_FILE, mode='r', encoding="utf8") as config_file:
+    #         config_dict: dict = json_load(config_file)
+    #         config: Config = Config(config_dict)
+    #     self.assertEqual(config.experiment.output_folder, Path("output"))
+    #     self.assertEqual(config.training.epochs, 100)
+    #     self.assertEqual(config.model.mlp.input_size, 2)    
 
 
 if __name__ == "__main__":

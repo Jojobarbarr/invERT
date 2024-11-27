@@ -1,8 +1,10 @@
 from json5 import dump as json_dump
 from pathlib import Path
+from copy import deepcopy
 
 class Config:
-    def __init__(self, config_dict: dict):
+    def __init__(self, config_dict_arg: dict):
+        config_dict = deepcopy(config_dict_arg)
         for key, value in config_dict.items():
             if isinstance(value, dict) and "value" in value and "type" in value:
                 value = self._validate_type(value["value"], value["type"], key)
@@ -35,8 +37,6 @@ class Config:
             "int": int,
             "float": float,
             "bool": bool,
-            "list": list,
-            "dict": dict,
             "Path": Path
         }
         return types_map.get(type_str, str)
