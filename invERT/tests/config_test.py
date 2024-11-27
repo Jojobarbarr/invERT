@@ -1,5 +1,5 @@
 import unittest
-from config.configuration import Config
+from invERT.config.configuration import Config
 import shutil
 from pathlib import Path
 import json
