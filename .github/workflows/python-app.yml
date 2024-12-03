@@ -37,7 +37,7 @@ jobs:
     - name: Auto-format with autopep8
       run: |
         # Automatically fix formatting issues detected by autopep8
-        autopep8 --in-place --aggressive --aggressive .  # You can adjust the aggressiveness of autopep8
+        find . -name "*.py" -exec autopep8 --in-place --aggressive --aggressive {} \;
         
     - name: Lint with flake8
       run: |
