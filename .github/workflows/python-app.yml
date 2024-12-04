@@ -26,7 +26,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest
+        pip install flake8 pytest autopep8
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if python -c "import torch; print(torch.cuda.is_available())" | grep True; then
           echo "GPU detected, installing PyTorch with CUDA..."
@@ -34,6 +34,11 @@ jobs:
         else
           echo "No GPU detected, keeping CPU-only PyTorch..."
         fi
+    - name: Auto-format with autopep8
+      run: |
+        # Automatically fix formatting issues detected by autopep8
+        find . -name "*.py" -exec autopep8 --in-place --aggressive --aggressive {} \;
+        
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
