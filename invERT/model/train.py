@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from data.data import denormalize
 
+
 def train(
         model: DynamicModel,
         epochs: int,
@@ -17,7 +18,7 @@ def train(
         test_dataloader: DataLoader,
         optimizer: Optimizer,
         criterion: Module,  # Loss function
-        scheduler: Module, # Learning rate scheduler
+        scheduler: Module,  # Learning rate scheduler
         loss_array: np.ndarray[float],
         test_loss_array: np.ndarray[float],
         input_max_shape: int,
@@ -25,27 +26,40 @@ def train(
         print_points: int,
 ) -> None:
     for epoch in range(epochs):
-        for batch, (inputs, targets) in tqdm(enumerate(train_dataloader), desc="Batch progression", total=len(train_dataloader), unit="batch"):
+        for batch, (inputs, targets) in tqdm(enumerate(train_dataloader),
+                                             desc="Batch progression", total=len(train_dataloader), unit="batch"):
 
             optimizer.zero_grad()  # Clear previous gradients
 
             batch_loss_value: Tensor = tensor([0], dtype=float32).to(device)
 
             for input, target in zip(inputs, targets):
-                logging.debug(f"Input shape: {input.shape}, target shape: {target.shape}")
+                logging.debug(
+                    f"Input shape: {input.shape}, target shape: {target.shape}")
                 input: Tensor = input.to(device).unsqueeze(1)
                 target: Tensor = target.to(device).unsqueeze(1)
-                logging.debug(f"Input shape: {input.shape}, target shape: {target.shape}")
-                logging.debug(f"Input device: {input.device}, target device: {target.device}")
-                
-                input_metadata: Tensor = tensor([input.shape[1] / input_max_shape, input.shape[2] / input_max_shape], dtype=float32).to(device)
-                
+                logging.debug(
+                    f"Input shape: {input.shape}, target shape: {target.shape}")
+                logging.debug(
+                    f"Input device: {input.device}, target device: {target.device}")
+
+                input_metadata: Tensor = tensor(
+                    [
+                        input.shape[1] /
+                        input_max_shape,
+                        input.shape[2] /
+                        input_max_shape],
+                    dtype=float32).to(device)
+
                 logging.debug(f"input_metadata shape: {input_metadata.shape}")
-                logging.debug(f"input_metadata.unsqueeze(0) shape: {input_metadata.unsqueeze(0).shape}")
+                logging.debug(
+                    f"input_metadata.unsqueeze(0) shape: {input_metadata.unsqueeze(0).shape}")
                 output: Tensor = model(input_metadata.unsqueeze(0), input)
 
                 # Compute the loss
-                loss_value: Tensor = criterion(output[:, :, 1:-1, 1:-1], target[:, :, 1:-1, 1:-1]) # Avoid to evaluate borders artifacts
+                # Avoid to evaluate borders artifacts
+                loss_value: Tensor = criterion(
+                    output[:, :, 1:-1, 1:-1], target[:, :, 1:-1, 1:-1])
                 batch_loss_value += loss_value
 
             batch_loss_value /= len(inputs)
@@ -58,36 +72,59 @@ def train(
             # for name, param in model.named_parameters():
             #     if param.grad is None:
             #         print(f"Grad for {name}: None")
-            
+
             optimizer.step()
 
-            if (batch + 1) % print_points == 0: # Test loss evaluation
+            if (batch + 1) % print_points == 0:  # Test loss evaluation
                 model.eval()
-                test_batch_loss_value: Tensor = tensor([0], dtype=float32).to(device)
+                test_batch_loss_value: Tensor = tensor(
+                    [0], dtype=float32).to(device)
                 test_batch: list[list[Tensor]] = next(iter(test_dataloader))
                 test_inputs, test_targets = test_batch
                 with no_grad():
-                    for test_input, test_target in zip(test_inputs, test_targets):
+                    for test_input, test_target in zip(
+                            test_inputs, test_targets):
                         test_input: Tensor = test_input.to(device)
-                        test_target: Tensor = test_target.to(device).unsqueeze(1)
-                        test_input_metadata: Tensor = tensor([test_input.shape[1] / input_max_shape, test_input.shape[2] / input_max_shape], dtype=float32).to(device)
-                        test_output = model(test_input_metadata.unsqueeze(0), test_input.unsqueeze(1))
+                        test_target: Tensor = test_target.to(
+                            device).unsqueeze(1)
+                        test_input_metadata: Tensor = tensor(
+                            [
+                                test_input.shape[1] /
+                                input_max_shape,
+                                test_input.shape[2] /
+                                input_max_shape],
+                            dtype=float32).to(device)
+                        test_output = model(
+                            test_input_metadata.unsqueeze(0),
+                            test_input.unsqueeze(1))
 
                         # Compute the loss
-                        test_loss = criterion(test_output[:, :, 1:-1, 1:-1], test_target[:, :, 1:-1, 1:-1]) # Avoid to evaluate borders artifacts
+                        # Avoid to evaluate borders artifacts
+                        test_loss = criterion(
+                            test_output[:, :, 1:-1, 1:-1], test_target[:, :, 1:-1, 1:-1])
                         test_batch_loss_value += test_loss
 
                 test_batch_loss_value /= len(test_inputs)
 
                 loss_array[batch // print_points] = batch_loss_value.item()
-                test_loss_array[batch // print_points] = test_batch_loss_value.item()
+                test_loss_array[batch //
+                                print_points] = test_batch_loss_value.item()
 
         scheduler.step(test_batch_loss_value)
         print(f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
-    
+
     return loss_array, test_loss_array, model
 
-def print_model_results(model_list: list[DynamicModel], val_dataloader: DataLoader, device: str, max_input_shape: int, min_data: float, max_data: float, min_target: float, max_target: float) -> None:
+
+def print_model_results(
+        model_list: list[DynamicModel],
+        val_dataloader: DataLoader,
+        device: str,
+        max_input_shape: int,
+        min_data: float,
+        max_data: float,
+        min_target: float,
+        max_target: float) -> None:
     model = model_list[0]
     with no_grad():
         model.eval()
@@ -96,24 +133,37 @@ def print_model_results(model_list: list[DynamicModel], val_dataloader: DataLoad
         val_inputs, val_targets = val_batch
 
         val_input, val_target = val_inputs[0], val_targets[0]
-    
+
         val_input: Tensor = val_input.to(device)
         val_target: Tensor = val_target.to(device).unsqueeze(1)
-        val_input_metadata: Tensor = tensor([val_input.shape[1] / max_input_shape, val_input.shape[2] / max_input_shape], dtype=float32).to(device)
-        val_output: Tensor = model(val_input_metadata.unsqueeze(0), val_input.unsqueeze(1))
+        val_input_metadata: Tensor = tensor(
+            [
+                val_input.shape[1] /
+                max_input_shape,
+                val_input.shape[2] /
+                max_input_shape],
+            dtype=float32).to(device)
+        val_output: Tensor = model(
+            val_input_metadata.unsqueeze(0),
+            val_input.unsqueeze(1))
 
         # Denormalize the data
-        val_target: np.ndarray[float, float] = denormalize(val_target[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
-        val_output: np.ndarray[float, float] = denormalize(val_output[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+        val_target: np.ndarray[float, float] = denormalize(
+            val_target[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+        val_output: np.ndarray[float, float] = denormalize(
+            val_output[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
 
-        print(f"target shape: {val_target.shape}, output shape: {val_output.shape}")
+        print(
+            f"target shape: {val_target.shape}, output shape: {val_output.shape}")
         error_map = np.abs(val_target - val_output) / val_target
 
         # Create subplots: 1 row, 3 columns
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
         # Normalize target and output for consistent scaling
-        vmin, vmax = min(val_target.min(), val_output.min()), max(val_target.max(), val_output.max())
+        vmin, vmax = min(
+            val_target.min(), val_output.min()), max(
+            val_target.max(), val_output.max())
 
         # Plot the target image
         im0 = axes[0].imshow(val_target, cmap='gray', vmin=vmin, vmax=vmax)

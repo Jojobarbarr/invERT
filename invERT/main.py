@@ -11,5 +11,5 @@ if __name__ == "__main__":
         tensor = tensor.to("cuda")
     else:
         print("CUDA is not available")
-    
+
     print(tensor.device)
