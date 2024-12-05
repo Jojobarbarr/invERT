@@ -1,11 +1,10 @@
-name: Test Application
+name: Test Code
 
 on:
-  push:
-    branches: ["master"]
-  pull_request:
-    branches: ["master"]
-
+  workflow_run:
+    workflows: ["Lint and Format"]
+    types:
+      - completed
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,6 +16,14 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: "3.10"
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
     - name: Install dependencies
       run: |
@@ -32,11 +39,4 @@ jobs:
       run: |
         cd invERT
         pytest --maxfail=5 --disable-warnings
-    - name: Cache pip dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
 
