@@ -34,11 +34,17 @@ jobs:
         else
           echo "No GPU detected, keeping CPU-only PyTorch..."
         fi
-    - name: Auto-format with autopep8
+    - uses: actions/checkout@v2
+    - name: autopep8
+      uses: peter-evans/autopep8@v2
+      with:
+        args: --recursive --in-place --aggressive --aggressive .
+    - name: Commit autopep8 changes
+      if: steps.autopep8.outputs.exit-code == 2
       run: |
-        # Automatically fix formatting issues detected by autopep8
-        find . -name "*.py" -exec autopep8 --in-place --aggressive --aggressive {} \;
-        
+        git commit -am "Automated autopep8 fixes"
+        git push
+      
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
