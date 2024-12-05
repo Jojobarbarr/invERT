@@ -111,8 +111,9 @@ def train(
                                 print_points] = test_batch_loss_value.item()
 
         scheduler.step(test_batch_loss_value)
-        print(f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, '
-              f'test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
+        print(
+            f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, '
+            f'test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
 
     return loss_array, test_loss_array, model
 

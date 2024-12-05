@@ -80,8 +80,7 @@ class Config:
         except FileExistsError:
             keep_going: str = input(
                 f"Output folder already exists here {self.experiment.output_folder.resolve()}. "
-                f"Do you want to continue? (y/n) "
-            )
+                f"Do you want to continue? (y/n) ")
             if keep_going.lower() != 'y':
                 return False
         with open(self.experiment.output_folder / "config.json5", 'w', encoding="utf8") as f:
@@ -100,8 +99,8 @@ class Config:
         output_filter: int = 1
         assert self.model.cnn.conv_layers[
             -1].filters == output_filter, \
-                (f"The number of filters in the last convolutional layer must be {output_filter}. "
-                 f"You have {self.model.cnn.conv_layers[-1].filters}.")
+            (f"The number of filters in the last convolutional layer must be {output_filter}. "
+             f"You have {self.model.cnn.conv_layers[-1].filters}.")
 
         implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
         assert self.training.optimizer in implemented_optimizers, \
