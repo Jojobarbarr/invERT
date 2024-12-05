@@ -2,7 +2,7 @@ import logging
 from tqdm import tqdm
 from torch import Tensor, float32, no_grad, tensor
 from torch.utils.data import DataLoader
-from torch.nn.utils import clip_grad_norm_
+# from torch.nn.utils import clip_grad_norm_
 from torch.nn import Module
 from torch.optim import Optimizer
 from model.models import DynamicModel
@@ -111,7 +111,8 @@ def train(
                                 print_points] = test_batch_loss_value.item()
 
         scheduler.step(test_batch_loss_value)
-        print(f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
+        print(f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, '
+              f'test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
 
     return loss_array, test_loss_array, model
 

@@ -70,12 +70,12 @@ class DynamicConvNet(nn.Module):
 
         kernel_init = kernels[:, :idx_list[0]].view(
             self.num_kernels[0], 1, self.kernel_sizes[0], self.kernel_sizes[0])
-        kernels_list = [kernel_init] + [kernels[:,
-                                                idx_list[i - 1]:idx_list[i]].view(self.num_kernels[i],
-                                                                                  self.num_kernels[i - 1],
-                                                                                  self.kernel_sizes[i],
-                                                                                  self.kernel_sizes[i]) for i in range(1,
-                                                                                                                       len(self.num_kernels))]
+        kernels_list = [kernels[:, idx_list[i - 1]:idx_list[i]].view(
+            self.num_kernels[i],
+            self.num_kernels[i - 1],
+            self.kernel_sizes[i],
+            self.kernel_sizes[i]) for i in range(1, len(self.num_kernels))]
+        kernels_list = [kernel_init] + kernels_list
 
         # Forward pass through the convolutional layers
         x = F.conv2d(x, kernels_list[0], padding="same")

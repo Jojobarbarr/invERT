@@ -163,4 +163,5 @@ if __name__ == "__main__":
 
     logging.info(f"Dataset length: {len(normalized_data)}")
     logging.info(
-        f"Data min shape: {min([sample.shape for sample in normalized_data])}, max shape: {max([sample.shape for sample in normalized_data])}")
+        f"Data min shape: {min([sample.shape for sample in normalized_data])}, "
+        f"max shape: {max([sample.shape for sample in normalized_data])}")

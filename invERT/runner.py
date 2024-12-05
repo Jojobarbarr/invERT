@@ -113,14 +113,32 @@ def main(config: Config):
         (config.experiment.repetitions, total_print_points))
     model_list: list[DynamicModel] = []
 
-    ##### EXPERIMENT LOOP #####
+    # EXPERIMENT LOOP #
     for repetition in range(config.experiment.repetitions):
         print(
-            f"\nStarting repetition {repetition + 1}/{config.experiment.repetitions} of experiment: {config.experiment.experiment_name}")
+            f"\nStarting repetition {repetition + 1}/{config.experiment.repetitions} "
+            f"of experiment: {config.experiment.experiment_name}")
         model, optimizer, scheduler = init(
-            config, mlp_config.input_size, mlp_config.hidden_layers, num_filters, kernel_sizes, cnn_config.input_channels, device)
+            config, 
+            mlp_config.input_size, 
+            mlp_config.hidden_layers, 
+            num_filters, 
+            kernel_sizes, 
+            cnn_config.input_channels, 
+            device)
         loss_array[repetition], test_loss_array[repetition], model = train(
-            model, epochs, train_dataloader, test_dataloader, optimizer, criterion, scheduler, loss_array[repetition], test_loss_array[repetition], max_input_shape, device, print_points)
+            model, 
+            epochs, 
+            train_dataloader, 
+            test_dataloader, 
+            optimizer, 
+            criterion, 
+            scheduler, 
+            loss_array[repetition], 
+            test_loss_array[repetition], 
+            max_input_shape, 
+            device, 
+            print_points)
         model_list.append(model)
 
     for repetition in range(config.experiment.repetitions):
