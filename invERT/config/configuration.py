@@ -88,8 +88,10 @@ class Config:
         self.experiment.output_folder = save_folder
         try:
             self.experiment.output_folder.mkdir(parents=True)
-        except FileExistsError: # There is already an experiment with the same name, warns the user,
-            if not args.yes:    # and if flag --yes is not True, asks for confirmation before overwriting it.
+        except FileExistsError:  # There is already an experiment with the same name, warns the user,
+            # and if flag --yes is not True, asks for confirmation before
+            # overwriting it.
+            if not args.yes:
                 keep_going: str = input(
                     f"Output folder already exists here {self.experiment.output_folder.resolve()}. "
                     f"Do you want to continue? (y/n) ")
@@ -127,8 +129,13 @@ class Config:
             (f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. "
              f"You have {self.training.lr_scheduler.type}.")
 
-        iteration_per_epoch: int = int((self.dataset.num_samples * (
-            1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size)
+        iteration_per_epoch: int = int(
+            (self.dataset.num_samples *
+             (
+                 1 -
+                 self.dataset.test_split -
+                 self.dataset.validation_split)) //
+            self.dataset.batch_size)
         assert self.logging.print_points < iteration_per_epoch, \
             (f"print_points must be less than the number of iterations in an epoch. "
              f"You have {self.logging.print_points} for {iteration_per_epoch} iterations per epoch.")

@@ -123,7 +123,7 @@ def main(config: Config):
             f"\nStarting repetition {repetition + 1}/{config.experiment.repetitions} "
             f"of experiment: {config.experiment.experiment_name}")
         start_time: float = perf_counter()
-        # Initialize or reset 
+        # Initialize or reset
         model, optimizer, scheduler = init(
             config,
             mlp_config.input_size,
@@ -132,10 +132,11 @@ def main(config: Config):
             kernel_sizes,
             cnn_config.input_channels,
             device)
-        
+
         output_folder: Path = Path()
         if logging_config.save_plot_on_time:
-            output_folder = config.experiment.output_folder / f"repetition_{repetition + 1}" / "figures"
+            output_folder = config.experiment.output_folder / \
+                f"repetition_{repetition + 1}" / "figures"
             output_folder.mkdir(parents=True, exist_ok=True)
 
         # Train
@@ -154,7 +155,7 @@ def main(config: Config):
             print_points,
             logging_config.save_plot_on_time,
             output_folder)
-        
+
         # print time in hh:mm:ss
         elapsed_time: float = perf_counter() - start_time
         if elapsed_time >= 60:
@@ -164,7 +165,7 @@ def main(config: Config):
         else:
             formatted_time = f"{elapsed_time:.2f}s"
         print(f"Repetition {repetition + 1} ended after {formatted_time}.")
-        
+
         model_list.append(model)
         optimizer_list.append(optimizer)
         scheduler_list.append(scheduler)
@@ -183,16 +184,17 @@ def main(config: Config):
         test_loss_array=test_loss_array,
         test_loss_array_mean=test_loss_array_mean,
         test_loss_array_std=test_loss_array_std)
-    
-    # Save the state of the model with the best test loss over the last 10% of the logs
-    best_model_index = np.argmin(np.mean(test_loss_array[-len(test_loss_array) // 10:], axis=1))
+
+    # Save the state of the model with the best test loss over the last 10% of
+    # the logs
+    best_model_index = np.argmin(
+        np.mean(test_loss_array[-len(test_loss_array) // 10:], axis=1))
     state = {
         "model": model_list[best_model_index].state_dict(),
         "optimizer": optimizer_list[best_model_index].state_dict(),
         "scheduler": scheduler_list[best_model_index].state_dict()
     }
     torch_save(state, config.experiment.output_folder / "best_model.pth")
-
 
     # Plot results
     for repetition in range(config.experiment.repetitions):
@@ -229,11 +231,11 @@ def main(config: Config):
     )
     plt.xticks(fontsize=12)  # Adjust font size for tick labels
     plt.yticks(fontsize=12)
-    plt.grid(True, linestyle="--", alpha=0.8)  # Add a grid for better readability
+    # Add a grid for better readability
+    plt.grid(True, linestyle="--", alpha=0.8)
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
     plt.show()
-
 
     print_model_results(
         model_list,
