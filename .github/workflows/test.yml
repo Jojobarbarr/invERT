@@ -32,3 +32,11 @@ jobs:
       run: |
         cd invERT
         pytest --maxfail=5 --disable-warnings
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
