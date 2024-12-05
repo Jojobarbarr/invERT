@@ -1,6 +1,8 @@
 from json5 import dump as json_dump
 from pathlib import Path
+from argparse import ArgumentParser
 from copy import deepcopy
+from datetime import datetime
 
 
 class Config:
@@ -59,7 +61,7 @@ class Config:
             python_type: type = type(getattr(sub_config, keys[-1]))
             setattr(sub_config, keys[-1], python_type(value))
 
-    def save(self) -> bool:
+    def save(self, args: ArgumentParser) -> bool:
         def to_dict(obj: dict) -> dict:
             """Recursively convert Config objects to dictionaries."""
             if isinstance(obj, Config):
@@ -75,14 +77,24 @@ class Config:
 
         if not self.check():
             return False
+        # Save foler is experiment_name_date_time
+        # Get the current date and time
+        current_datetime = datetime.now()
+
+        # Format the date and time
+        formatted_datetime: str = current_datetime.strftime("%d-%m-%Y_%Hh%M")
+        save_folder: Path = self.experiment.output_folder / \
+            f"{self.experiment.experiment_name}_{formatted_datetime}"
+        self.experiment.output_folder = save_folder
         try:
             self.experiment.output_folder.mkdir(parents=True)
-        except FileExistsError:
-            keep_going: str = input(
-                f"Output folder already exists here {self.experiment.output_folder.resolve()}. "
-                f"Do you want to continue? (y/n) ")
-            if keep_going.lower() != 'y':
-                return False
+        except FileExistsError: # There is already an experiment with the same name, warns the user,
+            if not args.yes:    # and if flag --yes is not True, asks for confirmation before overwriting it.
+                keep_going: str = input(
+                    f"Output folder already exists here {self.experiment.output_folder.resolve()}. "
+                    f"Do you want to continue? (y/n) ")
+                if keep_going.lower() != 'y':
+                    return False
         with open(self.experiment.output_folder / "config.json5", 'w', encoding="utf8") as f:
             json_dump(to_dict(self), f, indent=2)
         return True
@@ -115,25 +127,9 @@ class Config:
             (f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. "
              f"You have {self.training.lr_scheduler.type}.")
 
-        iteration_per_epoch: int = (self.dataset.num_samples * (
-            1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size
+        iteration_per_epoch: int = int((self.dataset.num_samples * (
+            1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size)
         assert self.logging.print_points < iteration_per_epoch, \
             (f"print_points must be less than the number of iterations in an epoch. "
              f"You have {self.logging.print_points} for {iteration_per_epoch} iterations per epoch.")
         return True
-
-
-if __name__ == "__main__":
-    config = Config({"foo": "bar",
-                     "baz": {
-                         "qux": "quux",
-                         "quux": [
-                             5,
-                             3
-                         ]
-                     }
-                     })
-    print(config.foo)  # bar
-    print(config.baz.qux)  # quux
-    print(config.baz.quux)  # [5, 3]
-    print(config)  # {'foo': 'bar', 'baz': {'qux': 'quux'}}

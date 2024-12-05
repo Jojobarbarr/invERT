@@ -8,6 +8,7 @@ from torch.optim import Optimizer
 from model.models import DynamicModel
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 from data.data import denormalize
 
 
@@ -24,6 +25,8 @@ def train(
         input_max_shape: int,
         device: str,
         print_points: int,
+        save_plot_on_time: bool,
+        output_folder: Path
 ) -> None:
     for epoch in range(epochs):
         for batch, (inputs, targets) in tqdm(enumerate(train_dataloader),
@@ -105,10 +108,19 @@ def train(
                         test_batch_loss_value += test_loss
 
                 test_batch_loss_value /= len(test_inputs)
-
-                loss_array[batch // print_points] = batch_loss_value.item()
-                test_loss_array[batch //
-                                print_points] = test_batch_loss_value.item()
+                idx: int = batch // print_points
+                loss_array[idx] = batch_loss_value.item()
+                test_loss_array[idx] = test_batch_loss_value.item()
+                if save_plot_on_time:
+                    step: int = batch + epoch * len(train_dataloader)
+                    plt.plot(loss_array[:idx + 1], label="Train loss")
+                    plt.plot(test_loss_array[:idx + 1], label="Test loss")
+                    plt.legend(["train", "test"])
+                    plt.xlabel("Step")
+                    plt.ylabel("Loss")
+                    plt.title("Train and test loss")
+                    plt.savefig(output_folder / f"loss_at_step_{step}.png")
+                    plt.close()
 
         scheduler.step(test_batch_loss_value)
         print(
