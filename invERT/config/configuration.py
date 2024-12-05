@@ -2,17 +2,21 @@ from json5 import dump as json_dump
 from pathlib import Path
 from copy import deepcopy
 
+
 class Config:
     def __init__(self, config_dict_arg: dict):
         config_dict = deepcopy(config_dict_arg)
         for key, value in config_dict.items():
-            if isinstance(value, dict) and "value" in value and "type" in value:
+            if isinstance(
+                    value,
+                    dict) and "value" in value and "type" in value:
                 value = self._validate_type(value["value"], value["type"], key)
             elif isinstance(value, dict):
                 # Recursively turn dictionaries into Config objects
                 value = Config(value)
             elif isinstance(value, list):
-                # Recursively turn lists of dictionaries into lists of Config objects
+                # Recursively turn lists of dictionaries into lists of Config
+                # objects
                 for index, item in enumerate(value):
                     if isinstance(item, dict):
                         value[index] = Config(item)
@@ -20,16 +24,17 @@ class Config:
 
     def __repr__(self):
         return str(self.__dict__)
-    
+
     def _validate_type(self, value: str, expected_type: str, key: str):
         """Validate the type of a configuration value."""
         python_type = self._get_python_type(expected_type)
         try:
             value = python_type(value)
-        except ValueError as _:
-            raise ValueError(f"\nKey '{key}' expected {expected_type}, got value {value} of type {type(value)}\n")
+        except ValueError as e:
+            raise ValueError(
+                f"\nKey '{key}' expected {expected_type}, got value {value} of type {type(value)} -- Original error: {e}\n")
         return value
-    
+
     def _get_python_type(self, type_str: str) -> type:
         """Convert a string type to an actual Python type. If the type is not recognized, return str."""
         types_map: dict[str: type] = {
@@ -53,12 +58,13 @@ class Config:
                     sub_config = getattr(sub_config, sub_key)
             python_type: type = type(getattr(sub_config, keys[-1]))
             setattr(sub_config, keys[-1], python_type(value))
-    
+
     def save(self) -> bool:
         def to_dict(obj: dict) -> dict:
             """Recursively convert Config objects to dictionaries."""
             if isinstance(obj, Config):
-                return {key: to_dict(value) for key, value in obj.__dict__.items()}
+                return {key: to_dict(value)
+                        for key, value in obj.__dict__.items()}
             elif isinstance(obj, list):
                 return [to_dict(item) for item in obj]
             elif isinstance(obj, Path):
@@ -66,51 +72,67 @@ class Config:
             elif isinstance(obj, dict):
                 return {key: to_dict(value) for key, value in obj.items()}
             return obj
-        
-        
+
         if not self.check():
             return False
         try:
             self.experiment.output_folder.mkdir(parents=True)
         except FileExistsError:
-            keep_going: str = input(f"Output folder already exists here {self.experiment.output_folder.resolve()}. Do you want to continue? (y/n) ")
+            keep_going: str = input(
+                f"Output folder already exists here {self.experiment.output_folder.resolve()}. "
+                f"Do you want to continue? (y/n) ")
             if keep_going.lower() != 'y':
                 return False
         with open(self.experiment.output_folder / "config.json5", 'w', encoding="utf8") as f:
             json_dump(to_dict(self), f, indent=2)
         return True
-    
+
     def check(self) -> bool:
         """Check if the configuration is valid."""
         limit: float = 0.9
-        assert self.dataset.test_split + self.dataset.validation_split < limit, f"The sum of test_split and validation_split must be less than {limit}. You have a test_split = {self.dataset.test_split} and a validation_split = {self.dataset.validation_split} (sum is {self.dataset.test_split + self.dataset.validation_split}."
-        
+        assert self.dataset.test_split + \
+            self.dataset.validation_split < limit, \
+            (f"The sum of test_split and validation_split must be less than {limit}. "
+             f"You have a test_split = {self.dataset.test_split} and a validation_split = {self.dataset.validation_split} "
+             f"(sum is {self.dataset.test_split + self.dataset.validation_split}.")
+
         output_filter: int = 1
-        assert self.model.cnn.conv_layers[-1].filters == output_filter, f"The number of filters in the last convolutional layer must be {output_filter}. You have {self.model.cnn.conv_layers[-1].filters}."
-        
+        assert self.model.cnn.conv_layers[
+            -1].filters == output_filter, \
+            (f"The number of filters in the last convolutional layer must be {output_filter}. "
+             f"You have {self.model.cnn.conv_layers[-1].filters}.")
+
         implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
-        assert self.training.optimizer in implemented_optimizers, f"Optimizer must be one of {implemented_optimizers}. You have {self.training.optimizer}."
-        
+        assert self.training.optimizer in implemented_optimizers, \
+            f"Optimizer must be one of {implemented_optimizers}. You have {self.training.optimizer}."
+
         implemented_training_losses: list[str] = ["mse", "l1"]
-        assert self.training.loss_function in implemented_training_losses, f"Loss must be one of {implemented_training_losses}. You have {self.training.loss_function}"
-        
+        assert self.training.loss_function in implemented_training_losses, \
+            f"Loss must be one of {implemented_training_losses}. You have {self.training.loss_function}"
+
         implemented_lr_schedulers: list[str] = ["plateau"]
-        assert self.training.lr_scheduler.type in implemented_lr_schedulers, f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. You have {self.training.lr_scheduler.type}."
-        
-        iteration_per_epoch: int = (self.dataset.num_samples * (1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size
-        assert self.logging.print_points <  iteration_per_epoch, f"print_points must be less than the number of iterations in an epoch. You have {self.logging.print_points} for {iteration_per_epoch} iterations per epoch."
+        assert self.training.lr_scheduler.type in implemented_lr_schedulers, \
+            (f"Learning rate scheduler type must be one of {implemented_lr_schedulers}. "
+             f"You have {self.training.lr_scheduler.type}.")
+
+        iteration_per_epoch: int = (self.dataset.num_samples * (
+            1 - self.dataset.test_split - self.dataset.validation_split)) // self.dataset.batch_size
+        assert self.logging.print_points < iteration_per_epoch, \
+            (f"print_points must be less than the number of iterations in an epoch. "
+             f"You have {self.logging.print_points} for {iteration_per_epoch} iterations per epoch.")
         return True
+
 
 if __name__ == "__main__":
     config = Config({"foo": "bar",
-        "baz": {
-            "qux": "quux",
-            "quux": [
-                5,
-                3
-            ]
-        }
-    })
+                     "baz": {
+                         "qux": "quux",
+                         "quux": [
+                             5,
+                             3
+                         ]
+                     }
+                     })
     print(config.foo)  # bar
     print(config.baz.qux)  # quux
     print(config.baz.quux)  # [5, 3]
