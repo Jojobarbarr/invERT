@@ -45,7 +45,7 @@ jobs:
         if [ -n "$(git status --porcelain)" ]; then
           git add .
           git commit -m "Auto-format code with autopep8"
-          git push
+          git push origin HEAD:master  # Specify branch to push to
         fi
 
     - name: Lint with flake8
