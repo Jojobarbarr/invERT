@@ -1,5 +1,5 @@
 import logging
-from time import perf_counter
+# from time import perf_counter
 from torch import device as set_device
 from torch.cuda import is_available as cuda_is_available
 from torch.optim import Adam, SGD, RMSprop

@@ -1,6 +1,6 @@
 import unittest
 from invERT.config.configuration import Config
-import shutil
+# import shutil
 from pathlib import Path
 from json5 import load as json_load
 
