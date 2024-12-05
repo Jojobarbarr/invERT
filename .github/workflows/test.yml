@@ -2,7 +2,7 @@ name: Test Code
 
 on:
   workflow_run:
-    workflows: ["lint-format"]
+    workflows: ["Lint and Format"]
     types:
       - completed
 jobs:
