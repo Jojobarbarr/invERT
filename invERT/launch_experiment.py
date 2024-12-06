@@ -23,6 +23,11 @@ def parse_arguments():
         action='store_true',
         help="Enable debug mode.")
     parser.add_argument(
+        '-y',
+        '--yes',
+        action='store_true',
+        help="Skip confirmation prompt.")
+    parser.add_argument(
         '-o',
         '--override',
         nargs='+',
@@ -68,7 +73,7 @@ def main():
     config.update(overrides)
 
     # Save the updated config to the experiment result folder
-    if not config.save():
+    if not config.save(args):
         print(
             f"\nFailed to save configuration file to {config.experiment.output_folder.resolve()}, exiting.")
         return
