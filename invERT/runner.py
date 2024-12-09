@@ -68,19 +68,26 @@ def main(config: Config):
         min_shape: int = dataset_config.data_min_size
         max_shape: int = dataset_config.data_max_size
         num_samples: int = dataset_config.num_samples
+        sub_groups: int = dataset_config.num_sub_group
         noise: float = dataset_config.noise
 
-        data = generate_data(num_samples, min_shape, max_shape, noise)
+        data = generate_data(
+            num_samples, sub_groups, min_shape, max_shape, noise
+        )
 
     data, target, max_input_shape, min_data, max_data, min_target, \
         max_target = pre_process_data(data)
 
-    train_dataloader, test_dataloader, val_dataloader = initialize_datasets(
-        data,
-        target,
-        dataset_config.batch_size,
-        dataset_config.test_split,
-        dataset_config.validation_split)
+    train_dataloaders, test_dataloaders, val_dataloaders = \
+        initialize_datasets(
+            data,
+            target,
+            dataset_config.batch_size,
+            dataset_config.batch_mixture,
+            dataset_config.test_split,
+            dataset_config.validation_split,
+            dataset_config.num_sub_group
+        )
 
     # Model
     mlp_config: Config = config.model.mlp
@@ -111,18 +118,18 @@ def main(config: Config):
 
     # Print and logging
     logging_config: Config = config.logging
-    print_points: int = len(train_dataloader) // logging_config.print_points
+    nb_batches: int = len(train_dataloaders) * len(train_dataloaders[0])
+    print_points: int = (nb_batches
+                         // logging_config.print_points)
     total_print_points: int = logging_config.print_points + \
-        ((len(train_dataloader) % logging_config.print_points) // print_points)
-    logging.debug(f"len(train_dataloader): {len(train_dataloader)}")
+        ((nb_batches % logging_config.print_points) // print_points)
+    logging.debug(f"nb_batches: {nb_batches}")
     logging.debug(
         f"logging_config.print_points: {logging_config.print_points}")
     logging.debug(f"Print points: {print_points}")
 
-    loss_array: np.ndarray[np.ndarray[float]] = np.zeros(
-        (config.experiment.repetitions, total_print_points))
-    test_loss_array: np.ndarray[np.ndarray[float]] = np.zeros(
-        (config.experiment.repetitions, total_print_points))
+    loss_arrays: list[list[float]] = []
+    test_loss_arrays: list[list[float]] = []
     model_list: list[DynamicModel] = []
     optimizer_list: list[Optimizer] = []
     scheduler_list: list[Module] = []
@@ -151,21 +158,21 @@ def main(config: Config):
             output_folder.mkdir(parents=True, exist_ok=True)
 
         # Train
-        loss_array[repetition], test_loss_array[repetition], model = train(
+        loss_array, test_loss_array, model = train(
             model,
             epochs,
-            train_dataloader,
-            test_dataloader,
+            train_dataloaders,
+            test_dataloaders,
             optimizer,
             criterion,
             scheduler,
-            loss_array[repetition],
-            test_loss_array[repetition],
             max_input_shape,
             device,
             print_points,
             logging_config.save_plot_on_time,
             output_folder)
+        loss_arrays.append(loss_array)
+        test_loss_arrays.append(test_loss_array)
 
         # print time in hh:mm:ss
         elapsed_time: float = perf_counter() - start_time
@@ -181,25 +188,25 @@ def main(config: Config):
         optimizer_list.append(optimizer)
         scheduler_list.append(scheduler)
 
-    loss_array_mean = np.mean(loss_array, axis=0)
-    loss_array_std = np.std(loss_array, axis=0)
+    loss_array_mean = np.mean(loss_arrays, axis=0)
+    loss_array_std = np.std(loss_arrays, axis=0)
 
-    test_loss_array_mean = np.mean(test_loss_array, axis=0)
-    test_loss_array_std = np.std(test_loss_array, axis=0)
+    test_loss_array_mean = np.mean(test_loss_arrays, axis=0)
+    test_loss_array_std = np.std(test_loss_arrays, axis=0)
 
     np.savez_compressed(
         config.experiment.output_folder / "loss_arrays.npz",
-        loss_array=loss_array,
+        loss_arrays=loss_arrays,
         loss_array_mean=loss_array_mean,
         loss_array_std=loss_array_std,
-        test_loss_array=test_loss_array,
+        test_loss_arrays=test_loss_arrays,
         test_loss_array_mean=test_loss_array_mean,
         test_loss_array_std=test_loss_array_std)
 
     # Save the state of the model with the best test loss
     # over the last 10% of the logs
     best_model_index = np.argmin(
-        np.mean(test_loss_array[-len(test_loss_array) // 10:], axis=1)
+        np.mean(test_loss_arrays[-len(test_loss_arrays) // 10:], axis=1)
     )
     state = {
         "model": model_list[best_model_index].state_dict(),
@@ -210,7 +217,7 @@ def main(config: Config):
 
     # Plot results
     for repetition in range(config.experiment.repetitions):
-        plt.plot(loss_array[repetition], label=f"Repetition {repetition + 1}")
+        plt.plot(loss_arrays[repetition], label=f"Repetition {repetition + 1}")
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
     plt.title("Training loss")
@@ -251,7 +258,7 @@ def main(config: Config):
 
     print_model_results(
         model_list,
-        val_dataloader,
+        val_dataloaders,
         device,
         max_input_shape,
         min_data,

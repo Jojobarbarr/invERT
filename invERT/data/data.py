@@ -1,7 +1,6 @@
 import logging
-from torch import cat, randn, sin, randint, rand, Tensor
+from torch import cat, randn, sin, rand, Tensor
 from torch.utils.data import Dataset, DataLoader, random_split
-from time import perf_counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +14,15 @@ class IrregularDataset(Dataset):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
+    def __getitem__(
+                self,
+                idx: int | slice
+            ) -> tuple[Tensor, Tensor] | list[tuple[Tensor, Tensor]]:
+        if isinstance(idx, slice):
+            data_slice = self.data[idx]
+            targets_slice = self.targets[idx]
+            # Return as a list of tuples
+            return list(zip(data_slice, targets_slice))
         return self.data[idx], self.targets[idx]
 
 
@@ -28,43 +35,58 @@ def custom_collate_fn(
     return inputs, targets
 
 
-def initialize_datasets(data: list[Tensor],
-                        target: list[Tensor],
-                        batch_size: int,
-                        test_split: float,
-                        validation_split: float) -> tuple[DataLoader,
-                                                          DataLoader,
-                                                          DataLoader]:
+def initialize_datasets(
+            data: list[Tensor],
+            target: list[Tensor],
+            batch_size: int,
+            batch_mixture: int,
+            test_split: float,
+            validation_split: float,
+            num_sub_group: int
+        ) -> tuple[
+            tuple[DataLoader],
+            tuple[DataLoader],
+            tuple[DataLoader]
+        ]:
     logging.info("Initializing dataset, dataloader and models...")
     dataset = IrregularDataset(data, target)
 
-    train_size = int((1 - test_split - validation_split) * len(dataset))
-    test_size = int(test_split * len(dataset))
-    val_size = len(dataset) - train_size - test_size
+    mini_batch_size: int = batch_size // batch_mixture
+    sub_groups_size: int = len(dataset) // num_sub_group
+    train_size: int = int((1 - test_split - validation_split)
+                          * sub_groups_size)
+    test_size: int = int(test_split * sub_groups_size)
+    val_size: int = sub_groups_size - train_size - test_size
 
-    train_dataset, test_dataset, val_dataset = random_split(
-        dataset, [train_size, test_size, val_size])
+    train_dataloaders: list[DataLoader] = []
+    test_dataloaders: list[DataLoader] = []
+    val_dataloaders: list[DataLoader] = []
 
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        collate_fn=custom_collate_fn,
-        shuffle=True,
-        drop_last=True)
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        collate_fn=custom_collate_fn,
-        shuffle=True,
-        drop_last=True)
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        collate_fn=custom_collate_fn,
-        shuffle=True,
-        drop_last=True)
+    for group_idx in range(num_sub_group):
+        start_idx: int = group_idx * sub_groups_size
+        end_idx: int = start_idx + sub_groups_size
 
-    return train_dataloader, test_dataloader, val_dataloader
+        train_dataset, test_dataset, val_dataset = random_split(
+            dataset[start_idx:end_idx], [train_size, test_size, val_size])
+
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_size=mini_batch_size,
+            shuffle=True,)
+        test_dataloader = DataLoader(
+            test_dataset,
+            batch_size=mini_batch_size,
+            shuffle=True,)
+        val_dataloader = DataLoader(
+            val_dataset,
+            batch_size=mini_batch_size,
+            shuffle=True,)
+
+        train_dataloaders.append(train_dataloader)
+        test_dataloaders.append(test_dataloader)
+        val_dataloaders.append(val_dataloader)
+
+    return train_dataloaders, test_dataloaders, val_dataloaders
 
 
 def normalize(
@@ -90,30 +112,39 @@ def target_func(x: Tensor, noise: float) -> Tensor:
             * x.shape[1]) * (1 + noise * randn(x.shape))
 
 
-def generate_data(size: int, min_shape: int, max_shape: int,
-                  noise: float) -> list[tuple[Tensor, Tensor]]:
+def generate_data(
+            size: int,
+            sub_groups: int,
+            min_shape: int,
+            max_shape: int,
+            noise: float
+        ) -> list[tuple[Tensor, Tensor]]:
     logging.info(
         f"Generating data with shapes between {min_shape} and {max_shape}...")
-
-    return [
-        (target_func(
-            target := 1000 * rand(1,
-                                  randint(min_shape, max_shape, (1,)),
-                                  randint(min_shape, max_shape, (1,))) + 500,
+    data: list[tuple[Tensor, Tensor]] = []
+    for _ in range(sub_groups):
+        data_shape: tuple[int, int] = (size // sub_groups,
+                                       1,
+                                       min_shape,
+                                       max_shape)
+        data_chunk: Tensor = 1000 * rand(data_shape) + 500
+        target_chunk: Tensor = target_func(
+            data_chunk,
             noise
-        ), target)
-        for _ in range(size)
-    ]
+        )
+        data.append((data_chunk, target_chunk))
+    return data
 
 
-def pre_process_data(data: list[tuple[Tensor,
-                                      Tensor]]) -> tuple[list[Tensor],
-                                                         list[Tensor],
-                                                         int,
-                                                         float,
-                                                         float,
-                                                         float,
-                                                         float]:
+def pre_process_data(
+        data: list[tuple[Tensor, Tensor]]
+    ) -> tuple[list[Tensor],
+               list[Tensor],
+               int,
+               float,
+               float,
+               float,
+               float]:
     train_data, train_targets = zip(*data)
     logging.info("Computing global min and max for normalization...")
     min_data, max_data = get_min_and_max(train_data)
@@ -121,12 +152,13 @@ def pre_process_data(data: list[tuple[Tensor,
     max_input_shape = max(max(sample.shape[1:3]) for sample in train_data)
 
     logging.info("Normalizing data and targets...")
-
-    normalized_train_data = [
-        normalize(sample, min_data, max_data) for sample in data
+    normalized_train_data: list[Tensor] = [
+        normalize(sample, min_data, max_data) for subgroup in train_data
+        for sample in subgroup
     ]
-    normalized_train_targets = [
-        normalize(sample, min_target, max_target) for sample in train_targets
+    normalized_train_targets: list[Tensor] = [
+        normalize(sample, min_target, max_target)
+        for subgroup in train_targets for sample in subgroup
     ]
 
     return (
@@ -137,35 +169,8 @@ def pre_process_data(data: list[tuple[Tensor,
     )
 
 
-def get_min_and_max(data: list[Tensor]) -> tuple[float, float]:
+def get_min_and_max(
+            data: list[Tensor]
+        ) -> tuple[float, float]:
     all_values = cat([tensor.flatten() for tensor in data])
     return all_values.min().item(), all_values.max().item()
-
-
-if __name__ == "__main__":
-    logging.info("Starting data generation...")
-    start_time: float = perf_counter()
-    data = generate_data(10000, 10, 100, 0.1)
-    logging.info(
-        f"Data generation took {perf_counter() - start_time:.4f} seconds.")
-    logging.info("Starting preprocessing...")
-    start_time = perf_counter()
-    (
-        normalized_data, normalized_target,
-        max_input_shape, min_data, max_data, min_target, max_target
-    ) = pre_process_data(data)
-    logging.info(
-        f"Preprocessing took {perf_counter() - start_time:.4f} seconds.")
-    # Debug output
-    sample_data = normalized_data[0]
-    logging.info(f"Data: {sample_data}")
-    logging.info(
-        f"Data shape: {sample_data.shape}, dtype: {sample_data.dtype}")
-    logging.info(
-        f"Data mean: {sample_data.mean():.4f}, std: {sample_data.std():.4f}")
-
-    logging.info(f"Dataset length: {len(normalized_data)}")
-    logging.info(
-        f"Data min shape: {min([sample.shape for sample in normalized_data])},"
-        f" max shape: {max([sample.shape for sample in normalized_data])}"
-    )

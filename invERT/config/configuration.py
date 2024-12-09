@@ -145,4 +145,35 @@ class Config:
             (f"print_points must be less than the number of iterations in an "
              f"epoch. You have {self.logging.print_points} for "
              f"{iteration_per_epoch} iterations per epoch.")
+
+        batch_size = self.dataset.batch_size
+        batch_mixture = self.dataset.batch_mixture
+        assert batch_size % batch_mixture == 0, \
+            (f"batch_mixture must be a divisor of batch_mixture. "
+             f"You have {batch_size} and {batch_mixture}.")
+
+        num_samples = self.dataset.num_samples
+        num_sub_group = self.dataset.num_sub_group
+        assert num_samples % num_sub_group == 0, \
+            (f"num_sub_group must be a divisor of num_samples. "
+             f"You have {num_samples} and {num_sub_group}.")
+
+        test_sub_group_size = self.dataset.test_split \
+            * (num_samples // num_sub_group)
+        assert test_sub_group_size > 0, \
+            (f"test sub_groups size must be greater than 0. "
+             f"Your test sub_groups size is {test_sub_group_size}.\n"
+             f"Increase test_split, dataset_size or decrease num_sub_group.")
+
+        val_sub_group_size = self.dataset.validation_split \
+            * (num_samples // num_sub_group)
+        assert val_sub_group_size > 0, \
+            (f"validation sub_groups size must be greater than 0. "
+             f"Your validation sub_groups size is {val_sub_group_size}.\n"
+             f"Increase validation_split, dataset_size or decrease "
+             f"num_sub_group.")
+
+        assert batch_mixture <= num_sub_group, \
+            (f"batch_mixture must be less than or equal to num_sub_group. "
+             f"You have {batch_mixture} and {num_sub_group}.")
         return True
