@@ -47,8 +47,10 @@ class TestConfig(unittest.TestCase):
         del value_type
         del key
 
-        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']['value']
-        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']['type']
+        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0][
+            'filters']['value']
+        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0][
+            'filters']['type']
         key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']
         self.assertEqual(
             config._validate_type(
@@ -60,8 +62,10 @@ class TestConfig(unittest.TestCase):
         del value_type
         del key
 
-        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']['value']
-        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']['type']
+        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0][
+            'padding']['value']
+        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0][
+            'padding']['type']
         key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']
         self.assertEqual(
             config._validate_type(
@@ -82,30 +86,6 @@ class TestConfig(unittest.TestCase):
                 value_type,
                 key),
             Path("./output"))
-
-        """
-        for key, value in CONFIG_DICT.items():
-            if isinstance(value, dict) and "value" in value and "type" in value:
-                value = self._validate_type(value["value"], value["type"], key)
-            elif isinstance(value, dict):
-                # Recursively turn dictionaries into Config objects
-                value = Config(value)
-            elif isinstance(value, list):
-                # Recursively turn lists of dictionaries into lists of Config objects
-                for index, item in enumerate(value):
-                    if isinstance(item, dict):
-                        value[index] = Config(item)
-            setattr(self, key, value)
-        """
-
-    # def test_initialization(self):
-    #     # Load the configuration file
-    #     with open(CONFIG_FILE, mode='r', encoding="utf8") as config_file:
-    #         config_dict: dict = json_load(config_file)
-    #         config: Config = Config(config_dict)
-    #     self.assertEqual(config.experiment.output_folder, Path("output"))
-    #     self.assertEqual(config.training.epochs, 100)
-    #     self.assertEqual(config.model.mlp.input_size, 2)
 
 
 if __name__ == "__main__":
