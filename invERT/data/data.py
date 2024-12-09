@@ -86,8 +86,8 @@ def denormalize(
 
 def target_func(x: Tensor, noise: float) -> Tensor:
     x_flip = x.flip((0, 1))
-    return (sin(x * (x_flip + x.shape[0])) + x *
-            x.shape[1]) * (1 + noise * randn(x.shape))
+    return (sin(x * (x_flip + x.shape[0])) + x
+            * x.shape[1]) * (1 + noise * randn(x.shape))
 
 
 def generate_data(size: int, min_shape: int, max_shape: int,
@@ -97,7 +97,9 @@ def generate_data(size: int, min_shape: int, max_shape: int,
 
     return [
         (target_func(
-            target := 1000 * rand(1, randint(min_shape, max_shape, (1,)), randint(min_shape, max_shape, (1,))) + 500,
+            target := 1000 * rand(1,
+                                  randint(min_shape, max_shape, (1,)),
+                                  randint(min_shape, max_shape, (1,))) + 500,
             noise
         ), target)
         for _ in range(size)
@@ -119,12 +121,13 @@ def pre_process_data(data: list[tuple[Tensor,
     max_input_shape = max(max(sample.shape[1:3]) for sample in train_data)
 
     logging.info("Normalizing data and targets...")
-    def normalize_list(data, min_val, max_val): return [
-        normalize(sample, min_val, max_val) for sample in data]
 
-    normalized_train_data = normalize_list(train_data, min_data, max_data)
-    normalized_train_targets = normalize_list(
-        train_targets, min_target, max_target)
+    normalized_train_data = [
+        normalize(sample, min_data, max_data) for sample in data
+    ]
+    normalized_train_targets = [
+        normalize(sample, min_target, max_target) for sample in train_targets
+    ]
 
     return (
         normalized_train_data, normalized_train_targets,
@@ -163,5 +166,6 @@ if __name__ == "__main__":
 
     logging.info(f"Dataset length: {len(normalized_data)}")
     logging.info(
-        f"Data min shape: {min([sample.shape for sample in normalized_data])}, "
-        f"max shape: {max([sample.shape for sample in normalized_data])}")
+        f"Data min shape: {min([sample.shape for sample in normalized_data])},"
+        f" max shape: {max([sample.shape for sample in normalized_data])}"
+    )
