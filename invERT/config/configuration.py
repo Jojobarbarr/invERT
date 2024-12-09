@@ -190,7 +190,7 @@ class Config:
         """
         # Get the current date and time
         current_datetime = datetime.now()
-        
+
         # Format the date and time
         formatted_datetime: str = current_datetime.strftime("%d-%m-%Y_%Hh%M")
 
@@ -199,7 +199,7 @@ class Config:
         save_folder: Path = self.experiment.output_folder / \
             f"{self.experiment.experiment_name}_{formatted_datetime}"
         return save_folder
-    
+
     def _create_save_folder(self,
                             always_yes: bool,
                             ) -> bool:
@@ -238,17 +238,17 @@ class Config:
                        ) -> bool:
         """
         Check the validity of the configuration and save it to JSON5 format.
-        
+
         The configuration is checked for validity using the check method. If
         the configuration is valid, the save method is called to save the
         configuration to a JSON5 file in the output folder specified in the
         configuration file. If the configuration is not valid, the function
         returns False.
-        
+
         @param always_yes: Skip the confirmation prompt if True.
         @return: True if the configuration file is saved successfully, False
         otherwise.
-        
+
         @raise AssertionError: If the configuration is not valid.
         """
         if not self._check():  # Check if the configuration is valid
@@ -260,7 +260,7 @@ class Config:
         # Create the save folder
         if not self._create_save_folder(always_yes):
             return False
-        
+
         # Save the configuration file
         with open(self.experiment.output_folder / "config.json5", 'w',
                   encoding="utf8") as config_file:
@@ -272,7 +272,7 @@ class Config:
         """
         Check if the configuration is valid.
 
-        If the configuration is not valid, the function raises an 
+        If the configuration is not valid, the function raises an
         AssertionError with a message indicating the issue.
         """
         # Check if the sum of test_split and validation_split is less than 0.4
@@ -311,7 +311,7 @@ class Config:
              f"{implemented_lr_schedulers}. You have "
              f"{self.training.lr_scheduler.type}.")
 
-        # Check if the print_points is less than the number of iterations in 
+        # Check if the print_points is less than the number of iterations in
         # an epoch
         iteration_per_epoch: int = int((self.dataset.num_samples * (
             1 - data_left)) // self.dataset.batch_size)
