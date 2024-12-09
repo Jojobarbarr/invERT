@@ -72,11 +72,15 @@ def main(config: Config):
 
         data = generate_data(num_samples, min_shape, max_shape, noise)
 
-    data, target, max_input_shape, min_data, max_data, min_target, max_target = pre_process_data(
-        data)
+    data, target, max_input_shape, min_data, max_data, min_target, \
+        max_target = pre_process_data(data)
 
     train_dataloader, test_dataloader, val_dataloader = initialize_datasets(
-        data, target, dataset_config.batch_size, dataset_config.test_split, dataset_config.validation_split)
+        data,
+        target,
+        dataset_config.batch_size,
+        dataset_config.test_split,
+        dataset_config.validation_split)
 
     # Model
     mlp_config: Config = config.model.mlp
@@ -96,8 +100,14 @@ def main(config: Config):
     criterion_options: dict = {"mse": MSELoss, "l1": L1Loss}
     criterion = criterion_options[training_config.loss_function]()
 
-    model, optimizer, scheduler = init(config, mlp_config.input_size, mlp_config.hidden_layers,
-                                       num_filters, kernel_sizes, cnn_config.input_channels, device)
+    model, optimizer, scheduler = init(
+        config,
+        mlp_config.input_size,
+        mlp_config.hidden_layers,
+        num_filters,
+        kernel_sizes,
+        cnn_config.input_channels,
+        device)
 
     # Print and logging
     logging_config: Config = config.logging
@@ -120,7 +130,8 @@ def main(config: Config):
     # EXPERIMENT LOOP #
     for repetition in range(config.experiment.repetitions):
         print(
-            f"\nStarting repetition {repetition + 1}/{config.experiment.repetitions} "
+            f"\nStarting repetition "
+            f"{repetition + 1}/{config.experiment.repetitions} "
             f"of experiment: {config.experiment.experiment_name}")
         start_time: float = perf_counter()
         # Initialize or reset
@@ -185,10 +196,11 @@ def main(config: Config):
         test_loss_array_mean=test_loss_array_mean,
         test_loss_array_std=test_loss_array_std)
 
-    # Save the state of the model with the best test loss over the last 10% of
-    # the logs
+    # Save the state of the model with the best test loss
+    # over the last 10% of the logs
     best_model_index = np.argmin(
-        np.mean(test_loss_array[-len(test_loss_array) // 10:], axis=1))
+        np.mean(test_loss_array[-len(test_loss_array) // 10:], axis=1)
+    )
     state = {
         "model": model_list[best_model_index].state_dict(),
         "optimizer": optimizer_list[best_model_index].state_dict(),
@@ -231,8 +243,8 @@ def main(config: Config):
     )
     plt.xticks(fontsize=12)  # Adjust font size for tick labels
     plt.yticks(fontsize=12)
-    # Add a grid for better readability
-    plt.grid(True, linestyle="--", alpha=0.8)
+    plt.grid(
+        True, linestyle="--", alpha=0.8)  # Add a grid for better readability
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
     plt.show()

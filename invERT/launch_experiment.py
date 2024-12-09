@@ -12,7 +12,8 @@ print(f"Importation done in {time.perf_counter() - start_time:.2f} seconds")
 
 def parse_arguments():
     parser = ArgumentParser(
-        description="Launch an experiment with a specified configuration file.")
+        description=("Launch an experiment with a specified configuration "
+                     "file."))
     parser.add_argument(
         'config_file',
         type=Path,
@@ -31,7 +32,8 @@ def parse_arguments():
         '-o',
         '--override',
         nargs='+',
-        help="Override specific config parameters (e.g., training.epochs=100).",
+        help=("Override specific config parameters "
+              "(e.g., training.epochs=100)."),
         default=[])
     return parser.parse_args()
 
@@ -69,16 +71,19 @@ def main():
 
     # Process overrides
     overrides: dict[str: str] = {overriden_arguments.split(
-        '=')[0]: overriden_arguments.split('=')[1] for overriden_arguments in args.override}
+        '=')[0]: overriden_arguments.split('=')[1]
+        for overriden_arguments in args.override}
     config.update(overrides)
 
     # Save the updated config to the experiment result folder
     if not config.save(args):
         print(
-            f"\nFailed to save configuration file to {config.experiment.output_folder.resolve()}, exiting.")
+            f"\nFailed to save configuration file to "
+            f"{config.experiment.output_folder.resolve()}, exiting.")
         return
     print(
-        f"\nSuccessfully saved updated configuration file to {config.experiment.output_folder / 'config.json5'}\n")
+        f"\nSuccessfully saved updated configuration file to "
+        f"{config.experiment.output_folder / 'config.json5'}\n")
 
     run_experiment(config)
 

@@ -29,8 +29,11 @@ def train(
         output_folder: Path
 ) -> None:
     for epoch in range(epochs):
-        for batch, (inputs, targets) in tqdm(enumerate(train_dataloader),
-                                             desc="Batch progression", total=len(train_dataloader), unit="batch"):
+        for batch, (inputs, targets) in tqdm(
+                enumerate(train_dataloader),
+                desc="Batch progression",
+                total=len(train_dataloader),
+                unit="batch"):
 
             optimizer.zero_grad()  # Clear previous gradients
 
@@ -38,25 +41,28 @@ def train(
 
             for input, target in zip(inputs, targets):
                 logging.debug(
-                    f"Input shape: {input.shape}, target shape: {target.shape}")
-                input: Tensor = input.to(device).unsqueeze(1)
+                    f"Input shape: {input.shape}, "
+                    f"target shape: {target.shape}")
+                input: Tensor = input.to(device)
+                input = input.unsqueeze(1)
                 target: Tensor = target.to(device).unsqueeze(1)
                 logging.debug(
-                    f"Input shape: {input.shape}, target shape: {target.shape}")
+                    f"Input shape: {input.shape}, "
+                    f"target shape: {target.shape}")
                 logging.debug(
-                    f"Input device: {input.device}, target device: {target.device}")
+                    f"Input device: {input.device}, "
+                    f"target device: {target.device}")
 
                 input_metadata: Tensor = tensor(
                     [
-                        input.shape[1] /
-                        input_max_shape,
-                        input.shape[2] /
-                        input_max_shape],
+                        input.shape[1] / input_max_shape,
+                        input.shape[2] / input_max_shape],
                     dtype=float32).to(device)
 
                 logging.debug(f"input_metadata shape: {input_metadata.shape}")
                 logging.debug(
-                    f"input_metadata.unsqueeze(0) shape: {input_metadata.unsqueeze(0).shape}")
+                    f"input_metadata.unsqueeze(0) shape: "
+                    f"{input_metadata.unsqueeze(0).shape}")
                 output: Tensor = model(input_metadata.unsqueeze(0), input)
 
                 # Compute the loss
@@ -92,10 +98,8 @@ def train(
                             device).unsqueeze(1)
                         test_input_metadata: Tensor = tensor(
                             [
-                                test_input.shape[1] /
-                                input_max_shape,
-                                test_input.shape[2] /
-                                input_max_shape],
+                                test_input.shape[1] / input_max_shape,
+                                test_input.shape[2] / input_max_shape],
                             dtype=float32).to(device)
                         test_output = model(
                             test_input_metadata.unsqueeze(0),
@@ -104,7 +108,8 @@ def train(
                         # Compute the loss
                         # Avoid to evaluate borders artifacts
                         test_loss = criterion(
-                            test_output[:, :, 1:-1, 1:-1], test_target[:, :, 1:-1, 1:-1])
+                            test_output[:, :, 1:-1, 1:-1],
+                            test_target[:, :, 1:-1, 1:-1])
                         test_batch_loss_value += test_loss
 
                 test_batch_loss_value /= len(test_inputs)
@@ -124,8 +129,10 @@ def train(
 
         scheduler.step(test_batch_loss_value)
         print(
-            f'Epoch [{epoch + 1}/{epochs}], train loss: {batch_loss_value.item():.5f}, '
-            f'test loss: {test_batch_loss_value.item():.5f}, lr: {optimizer.param_groups[0]["lr"]}')
+            f"Epoch [{epoch + 1}/{epochs}], ",
+            f"train loss: {batch_loss_value.item():.5f}, "
+            f"test loss: {test_batch_loss_value.item():.5f}, "
+            f"lr: {optimizer.param_groups[0]['lr']}")
 
     return loss_array, test_loss_array, model
 
@@ -152,10 +159,8 @@ def print_model_results(
         val_target: Tensor = val_target.to(device).unsqueeze(1)
         val_input_metadata: Tensor = tensor(
             [
-                val_input.shape[1] /
-                max_input_shape,
-                val_input.shape[2] /
-                max_input_shape],
+                val_input.shape[1] / max_input_shape,
+                val_input.shape[2] / max_input_shape],
             dtype=float32).to(device)
         val_output: Tensor = model(
             val_input_metadata.unsqueeze(0),
@@ -163,12 +168,15 @@ def print_model_results(
 
         # Denormalize the data
         val_target: np.ndarray[float, float] = denormalize(
-            val_target[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+            val_target[:, :, 1:-1, 1:-1],
+            min_target, max_target)[0, 0].detach().cpu().numpy()
         val_output: np.ndarray[float, float] = denormalize(
-            val_output[:, :, 1:-1, 1:-1], min_target, max_target)[0, 0].detach().cpu().numpy()
+            val_output[:, :, 1:-1, 1:-1],
+            min_target, max_target)[0, 0].detach().cpu().numpy()
 
         print(
-            f"target shape: {val_target.shape}, output shape: {val_output.shape}")
+            f"target shape: {val_target.shape}, "
+            f"output shape: {val_output.shape}")
         error_map = np.abs(val_target - val_output) / val_target
 
         # Create subplots: 1 row, 3 columns
