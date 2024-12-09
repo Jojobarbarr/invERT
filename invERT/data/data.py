@@ -15,9 +15,9 @@ class IrregularDataset(Dataset):
         return len(self.data)
 
     def __getitem__(
-                self,
-                idx: int | slice
-            ) -> tuple[Tensor, Tensor] | list[tuple[Tensor, Tensor]]:
+        self,
+        idx: int | slice
+    ) -> tuple[Tensor, Tensor] | list[tuple[Tensor, Tensor]]:
         if isinstance(idx, slice):
             data_slice = self.data[idx]
             targets_slice = self.targets[idx]
@@ -36,18 +36,18 @@ def custom_collate_fn(
 
 
 def initialize_datasets(
-            data: list[Tensor],
-            target: list[Tensor],
-            batch_size: int,
-            batch_mixture: int,
-            test_split: float,
-            validation_split: float,
-            num_sub_group: int
-        ) -> tuple[
-            tuple[DataLoader],
-            tuple[DataLoader],
-            tuple[DataLoader]
-        ]:
+    data: list[Tensor],
+    target: list[Tensor],
+    batch_size: int,
+    batch_mixture: int,
+    test_split: float,
+    validation_split: float,
+    num_sub_group: int
+) -> tuple[
+    tuple[DataLoader],
+    tuple[DataLoader],
+    tuple[DataLoader]
+]:
     logging.info("Initializing dataset, dataloader and models...")
     dataset = IrregularDataset(data, target)
 
@@ -113,12 +113,12 @@ def target_func(x: Tensor, noise: float) -> Tensor:
 
 
 def generate_data(
-            size: int,
-            sub_groups: int,
-            min_shape: int,
-            max_shape: int,
-            noise: float
-        ) -> list[tuple[Tensor, Tensor]]:
+    size: int,
+    sub_groups: int,
+    min_shape: int,
+    max_shape: int,
+    noise: float
+) -> list[tuple[Tensor, Tensor]]:
     logging.info(
         f"Generating data with shapes between {min_shape} and {max_shape}...")
     data: list[tuple[Tensor, Tensor]] = []
@@ -170,7 +170,7 @@ def pre_process_data(
 
 
 def get_min_and_max(
-            data: list[Tensor]
-        ) -> tuple[float, float]:
+    data: list[Tensor]
+) -> tuple[float, float]:
     all_values = cat([tensor.flatten() for tensor in data])
     return all_values.min().item(), all_values.max().item()

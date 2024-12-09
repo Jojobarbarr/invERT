@@ -137,15 +137,15 @@ def train(
 
 
 def print_model_results(
-            model_list: list[DynamicModel],
-            val_dataloaders: DataLoader,
-            device: str,
-            max_input_shape: int,
-            min_data: float,
-            max_data: float,
-            min_target: float,
-            max_target: float
-        ) -> None:
+    model_list: list[DynamicModel],
+    val_dataloaders: DataLoader,
+    device: str,
+    max_input_shape: int,
+    min_data: float,
+    max_data: float,
+    min_target: float,
+    max_target: float
+) -> None:
     model = model_list[0]
     with no_grad():
         model.eval()
