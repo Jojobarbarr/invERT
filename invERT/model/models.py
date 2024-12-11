@@ -26,7 +26,8 @@ class KernelGeneratorMLP(nn.Module):
                                      c,
                                      n in zip(kernel_sizes,
                                               [1] + num_kernels[:-1],
-                                              num_kernels)))  # Combined output for all conv layers
+                                              num_kernels)))
+        # Combined output for all conv layers
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.fc_first(x))
@@ -56,17 +57,15 @@ class DynamicConvNet(nn.Module):
         for layer_index in range(len(self.num_kernels)):
             if layer_index == 0:
                 idx_list.append(
-                    self.num_kernels[layer_index] *
-                    self.kernel_sizes[layer_index] *
-                    self.kernel_sizes[layer_index])
+                    self.num_kernels[layer_index]
+                    * self.kernel_sizes[layer_index]
+                    * self.kernel_sizes[layer_index])
             else:
-                idx_list.append(idx_list[layer_index -
-                                         1] +
-                                self.num_kernels[layer_index] *
-                                self.num_kernels[layer_index -
-                                                 1] *
-                                self.kernel_sizes[layer_index] *
-                                self.kernel_sizes[layer_index])
+                idx_list.append(idx_list[layer_index - 1]
+                                + self.num_kernels[layer_index]
+                                * self.num_kernels[layer_index - 1]
+                                * self.kernel_sizes[layer_index]
+                                * self.kernel_sizes[layer_index])
 
         kernel_init = kernels[:, :idx_list[0]].view(
             self.num_kernels[0], 1, self.kernel_sizes[0], self.kernel_sizes[0])
@@ -106,7 +105,8 @@ class DynamicModel(nn.Module):
         :param hidden_dim: The hidden layer sizes for the MLP
         :param num_kernels: The number of kernels for each convolutional layer
         :param kernel_sizes: The kernel sizes for each convolutional layer
-        :param in_channels: The number of input channels for the convolutional network
+        :param in_channels: The number of input channels for the
+                             convolutional network
 
         """
         super(DynamicModel, self).__init__()
