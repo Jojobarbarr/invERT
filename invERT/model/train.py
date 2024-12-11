@@ -118,11 +118,11 @@ def train(model: DynamicModel,
                     test_batch_loss_value.item()
                 if save_plot_on_time:
                     plt.plot(
-                        loss_arrays[repetition, :print_point], 
+                        loss_arrays[repetition, :print_point],
                         label="Train loss"
                     )
                     plt.plot(
-                        test_loss_arrays[repetition, :print_point], 
+                        test_loss_arrays[repetition, :print_point],
                         label="Test loss"
                     )
                     plt.legend(["train", "test"])

@@ -71,8 +71,9 @@ def init_dataloaders(config: Config,
             test_split,
             validation_split,
         )
-    
+
     return train_dataloaders, test_dataloaders, val_dataloaders
+
 
 def init_model(config: Config) -> DynamicModel:
     mlp_config: Config = config.model.mlp
@@ -94,7 +95,8 @@ def init_model(config: Config) -> DynamicModel:
 
     return model
 
-def init_optimizer(config: Config, 
+
+def init_optimizer(config: Config,
                    model: DynamicModel
                    ):
     optimizer_config: Config = config.training.optimizer
@@ -151,6 +153,7 @@ def init_logging(config: Config,
 
     return print_points, nb_batches
 
+
 def main(config: Config):
     # Set device to GPU if available
     if cuda_is_available():
@@ -161,7 +164,7 @@ def main(config: Config):
     # Initialize data
     data, target, max_input_shape, min_data, max_data, min_target, \
         max_target = init_data(config)
-    
+
     # Initialize dataloaders
     train_dataloaders, test_dataloaders, val_dataloaders = \
         init_dataloaders(config)
@@ -178,15 +181,15 @@ def main(config: Config):
 
     # Array to store the lresults of each repetition
     loss_arrays: np.ndarray = np.zeros(
-        (config.experiment.repetitions, print_points * epochs), 
+        (config.experiment.repetitions, print_points * epochs),
         dtype=float
     )
     test_loss_arrays: np.ndarray = np.zeros(
         (config.experiment.repetitions, print_points * epochs),
         dtype=float)
-    model_list: np.ndarray = np.empty(config.experiment.repetitions, 
+    model_list: np.ndarray = np.empty(config.experiment.repetitions,
                                       dtype=object)
-    optimizer_list: np.ndarray = np.empty(config.experiment.repetitions, 
+    optimizer_list: np.ndarray = np.empty(config.experiment.repetitions,
                                           dtype=object)
     scheduler_list: np.ndarray = np.empty(config.experiment.repetitions,
                                           dtype=object)

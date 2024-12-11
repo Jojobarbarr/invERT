@@ -30,18 +30,18 @@ class IrregularDataset(Dataset):
     def __len__(self) -> int:
         """
         Return the total number of samples in the dataset.
-        
+
         The total number of samples is the product of the number of sub-groups
         and the number of samples per sub-group.
-        
+
         @return: The total number of samples in the dataset.
         """
         return len(self.data) * len(self.data[0])
-    
+
     def len_sub_group(self) -> int:
         """
         Return the number of samples per sub-group.
-        
+
         @return: The number of samples per sub-group.
         """
         return len(self.data[0])
@@ -67,7 +67,7 @@ def initialize_datasets(data: list[Tensor],
                             tuple[DataLoader],
                             tuple[DataLoader],
                             tuple[DataLoader]
-                        ]:
+]:
     logging.info("Initializing dataset, dataloader and models...")
     dataset = IrregularDataset(data, target)
 
@@ -113,11 +113,11 @@ def normalize(x: Tensor,
               ) -> Tensor:
     """
     Normalize a list of tensors.
-    
+
     The normalization is done by subtracting the minimum value and dividing by
     the maximum value. The scaling parameter can be used to scale the values
     to a different range, for example between 0 and 0.95.
-    
+
     @param x: The list of tensors to normalize.
     @param min_val: The minimum value of the tensors.
     @param max_val: The maximum value of the tensors.
@@ -166,10 +166,10 @@ def generate_data(num_samples: int,
                   ) -> list[tuple[Tensor, Tensor]]:
     """
     Generate a dataset composed of sub-groups of different data shapes.
-    
+
     Each sample in a sub-group has the same shape. The dataset is composed of
     sub-groups of different data shapes.
-    
+
     @param num_samples: Total number of samples in the dataset.
     @param num_sub_groups: Number of sub-groups in the dataset.
     @param data_min_size: Minimum size of the data.
@@ -218,12 +218,12 @@ def pre_process_data(data: list[tuple[Tensor, Tensor]],
                                 float]:
     """
     Pre-process the data and targets.
-    
+
     The data and targets are normalized using the global minimum and maximum
     values. The function returns the normalized data and targets, as well as
-    the minimum and maximum values used for normalization to use them for 
+    the minimum and maximum values used for normalization to use them for
     denormalization.
-    
+
     @param data: The list of tuples (data, target). The length of the list is
     the number of sub-groups in the dataset.
     @return: The normalized data and targets, the minimum and maximum values
@@ -232,7 +232,7 @@ def pre_process_data(data: list[tuple[Tensor, Tensor]],
     # Unzip the data and combines the data and target tensors in two lists
     train_data, train_targets = zip(*data)
     # train_data and train_targets are lists of tensors of shape
-    # (num_samples_per_sub_group, 1, width, height) with varying width and 
+    # (num_samples_per_sub_group, 1, width, height) with varying width and
     # height for each sub-group.
 
     logging.info("Computing global min and max for normalization...")
@@ -269,7 +269,7 @@ def get_min_and_max(data: list[Tensor]
 
     The tensors are flattened and concatenated. The minimum
     and maximum values are computed on the resulting tensor.
-    
+
     @param data: The list of tensors.
     @return: The minimum and maximum values.
     """

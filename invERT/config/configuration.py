@@ -347,7 +347,7 @@ class Config:
         assert batch_mixture <= num_sub_group, \
             (f"batch_mixture must be less than or equal to num_sub_group. "
              f"You have {batch_mixture} and {num_sub_group}.")
-        
+
         # Check if logging.print_points is a divisor of the number of batches.
         iteration_per_epoch = num_samples // batch_size
         assert iteration_per_epoch % self.logging.print_points == 0, \
