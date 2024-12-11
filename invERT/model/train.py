@@ -125,10 +125,10 @@ def process_batch(model: DynamicModel,
     for train_dataloader in train_dataloaders:
         # Accumulate the loss value for the mini-batch
         batch_loss_value += process_mini_batch(model,
-                                                train_dataloader,
-                                                device,
-                                                input_max_shape,
-                                                criterion)
+                                               train_dataloader,
+                                               device,
+                                               input_max_shape,
+                                               criterion)
 
     # Backward pass
     batch_loss_value.backward()
@@ -150,17 +150,17 @@ def process_batch(model: DynamicModel,
         print_point: int = (batch // print_points) \
             + nb_print_points * epoch
         test_batch_loss_value = test(model,
-                                        batch_size,
-                                        print_point,
-                                        device,
-                                        test_dataloaders,
-                                        input_max_shape,
-                                        criterion,
-                                        loss_arrays,
-                                        test_loss_arrays,
-                                        batch_loss_value,
-                                        repetition,
-                                        queue)
+                                     batch_size,
+                                     print_point,
+                                     device,
+                                     test_dataloaders,
+                                     input_max_shape,
+                                     criterion,
+                                     loss_arrays,
+                                     test_loss_arrays,
+                                     batch_loss_value,
+                                     repetition,
+                                     queue)
     return test_batch_loss_value
 
 
@@ -178,6 +178,7 @@ def process_epoch(model: DynamicModel,
     scheduler.step(test_batch_loss_value)
 
     return batch_loss_value, test_batch_loss_value
+
 
 def train(model: DynamicModel,
           epochs: int,
