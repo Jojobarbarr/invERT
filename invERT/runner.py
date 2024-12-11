@@ -202,10 +202,10 @@ def main(config: Config):
     queue = mp.Queue()
     plotter = mp.Process(target=plot_loss, args=(queue,))
     plotter.start()
-    
+
     if not launch_plotter(queue):
         print("Failed to start plotter process.")
-    
+
     # Set device to GPU if available
     if cuda_is_available():
         device = set_device("cuda")
@@ -244,7 +244,7 @@ def main(config: Config):
                                           dtype=object)
     scheduler_list: np.ndarray = np.empty(config.experiment.repetitions,
                                           dtype=object)
-    
+
     # EXPERIMENT LOOP #
     try:
         for repetition in range(config.experiment.repetitions):

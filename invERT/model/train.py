@@ -30,7 +30,7 @@ def test(model: DynamicModel,
     print_point: int = (batch // print_points) \
         + nb_print_points * epoch
     model.eval()
-    test_batch_loss_value: Tensor = tensor(0, 
+    test_batch_loss_value: Tensor = tensor(0,
                                            dtype=float32).to(device)
     for test_dataloader in test_dataloaders:
         test_inputs, test_targets = next(iter(test_dataloader))
