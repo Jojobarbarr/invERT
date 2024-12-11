@@ -311,15 +311,6 @@ class Config:
              f"{implemented_lr_schedulers}. You have "
              f"{self.training.lr_scheduler.type}.")
 
-        # Check if the print_points is less than the number of iterations in
-        # an epoch
-        iteration_per_epoch: int = int((self.dataset.num_samples * (
-            1 - data_left)) // self.dataset.batch_size)
-        assert self.logging.print_points < iteration_per_epoch, \
-            (f"print_points must be less than the number of iterations in an "
-             f"epoch. You have {self.logging.print_points} for "
-             f"{iteration_per_epoch} iterations per epoch.")
-
         # Check if the batch_mixture is a divisor of the batch_size
         batch_size = self.dataset.batch_size
         batch_mixture = self.dataset.batch_mixture
@@ -356,4 +347,12 @@ class Config:
         assert batch_mixture <= num_sub_group, \
             (f"batch_mixture must be less than or equal to num_sub_group. "
              f"You have {batch_mixture} and {num_sub_group}.")
+        
+        # Check if logging.print_points is a divisor of the number of batches.
+        iteration_per_epoch = num_samples // batch_size
+        assert iteration_per_epoch % self.logging.print_points == 0, \
+            (f"logging.print_points must be a divisor of the number of "
+             f"batches. You have {iteration_per_epoch} and "
+             f"{self.logging.print_points}.")
+
         return True

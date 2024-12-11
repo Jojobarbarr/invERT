@@ -12,28 +12,26 @@ from pathlib import Path
 from data.data import denormalize
 
 
-def train(
-        model: DynamicModel,
-        epochs: int,
-        train_dataloaders: list[DataLoader],
-        test_dataloaders: list[DataLoader],
-        optimizer: Optimizer,
-        criterion: Module,  # Loss function
-        scheduler: Module,  # Learning rate scheduler
-        input_max_shape: int,
-        device: str,
-        print_points: int,
-        save_plot_on_time: bool,
-        output_folder: Path
-) -> tuple[list[float],
-           list[float],
-           DynamicModel]:
+def train(model: DynamicModel,
+          epochs: int,
+          train_dataloaders: list[DataLoader],
+          test_dataloaders: list[DataLoader],
+          optimizer: Optimizer,
+          criterion: Module,  # Loss function
+          scheduler: Module,  # Learning rate scheduler
+          input_max_shape: int,
+          device: str,
+          print_points: int,
+          nb_print_points: int,
+          loss_arrays: np.ndarray[float],
+          test_loss_arrays: np.ndarray[float],
+          repetition: int,
+          save_plot_on_time: bool,
+          output_folder: Path
+          ) -> tuple[list[float], list[float], DynamicModel]:
     nb_batches: int = len(train_dataloaders) * len(train_dataloaders[0])
-    loss_array: list[float] = []
-    test_loss_array: list[float] = []
     for epoch in range(epochs):
         nbr_steps_total: int = nb_batches * epoch
-        print(f"nbr_steps_total: {nbr_steps_total}")
         for batch in tqdm(range(nb_batches)):
             for dataloader_idx, train_dataloader in enumerate(
                     train_dataloaders):
@@ -87,6 +85,8 @@ def train(
             optimizer.step()
 
             if (batch + 1) % print_points == 0:  # Test loss evaluation
+                print_point: int = (batch // print_points) \
+                    + nb_print_points * epoch
                 model.eval()
                 test_batch_loss_value: Tensor = tensor(
                     [0], dtype=float32).to(device)
@@ -113,11 +113,18 @@ def train(
 
                 test_batch_loss_value /= (test_dataloader.batch_size
                                           * len(test_dataloaders))
-                loss_array.append(batch_loss_value.item())
-                test_loss_array.append(test_batch_loss_value.item())
+                loss_arrays[repetition, print_point] = batch_loss_value.item()
+                test_loss_arrays[repetition, print_point] = \
+                    test_batch_loss_value.item()
                 if save_plot_on_time:
-                    plt.plot(loss_array, label="Train loss")
-                    plt.plot(test_loss_array, label="Test loss")
+                    plt.plot(
+                        loss_arrays[repetition, :print_point], 
+                        label="Train loss"
+                    )
+                    plt.plot(
+                        test_loss_arrays[repetition, :print_point], 
+                        label="Test loss"
+                    )
                     plt.legend(["train", "test"])
                     plt.xlabel("Step")
                     plt.ylabel("Loss")
@@ -133,7 +140,7 @@ def train(
             f"test loss: {test_batch_loss_value.item():.5f}, "
             f"lr: {optimizer.param_groups[0]['lr']}")
 
-    return loss_array, test_loss_array, model
+    return model
 
 
 def print_model_results(
