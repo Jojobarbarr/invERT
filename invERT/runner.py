@@ -2,6 +2,8 @@ import logging
 from time import perf_counter
 from torch import device as set_device
 from torch import save as torch_save
+from torch import Tensor
+from torch.utils.data import DataLoader
 from torch.cuda import is_available as cuda_is_available
 from torch.optim import Adam, SGD, RMSprop
 from torch.optim.optimizer import Optimizer
@@ -15,6 +17,7 @@ from pathlib import Path
 from model.train import train, print_model_results
 from data.data import generate_data, pre_process_data, initialize_datasets
 import matplotlib.pyplot as plt
+import multiprocessing as mp
 
 
 def init_data(config: Config):
@@ -28,6 +31,8 @@ def init_data(config: Config):
         data_max_size: int = dataset_config.data_max_size
         noise: float = dataset_config.noise
 
+        num_samples = int(num_samples * (1 + dataset_config.validation_split +
+                                         dataset_config.test_split))
         data: list[tuple[Tensor, Tensor]] = generate_data(num_samples,
                                                           num_sub_groups,
                                                           data_min_size,
@@ -58,6 +63,7 @@ def init_dataloaders(config: Config,
     batch_size: int = dataset_config.batch_size
     batch_mixture: int = dataset_config.batch_mixture
     num_sub_group: int = dataset_config.num_sub_group
+    sub_group_size: int = dataset_config.num_samples // num_sub_group
     test_split: float = dataset_config.test_split
     validation_split: float = dataset_config.validation_split
 
@@ -68,6 +74,7 @@ def init_dataloaders(config: Config,
             batch_size,
             batch_mixture,
             num_sub_group,
+            sub_group_size,
             test_split,
             validation_split,
         )
@@ -98,23 +105,26 @@ def init_model(config: Config) -> DynamicModel:
 
 def init_optimizer(config: Config,
                    model: DynamicModel
-                   ):
+                   ) -> Optimizer:
+    initial_lr: float = config.training.initial_learning_rate
+
     optimizer_config: Config = config.training.optimizer
 
+    optimizer: Optimizer
     if optimizer_config.type == "adam":
         optimizer = Adam(
             model.parameters(),
-            lr=optimizer_config.learning_rate,
+            lr=initial_lr,
             weight_decay=optimizer_config.weight_decay)
     elif optimizer_config.type == "sgd":
         optimizer = SGD(
             model.parameters(),
-            lr=optimizer_config.learning_rate,
+            lr=initial_lr,
             weight_decay=optimizer_config.weight_decay)
     elif optimizer_config.type == "rmsprop":
         optimizer = RMSprop(
             model.parameters(),
-            lr=optimizer_config.learning_rate,
+            lr=initial_lr,
             weight_decay=optimizer_config.weight_decay)
 
     return optimizer
@@ -122,9 +132,10 @@ def init_optimizer(config: Config,
 
 def init_scheduler(config: Config,
                    optimizer
-                   ):
+                   ) -> Module:
     scheduler_config: Config = config.training.lr_scheduler
 
+    scheduler: Module
     if scheduler_config.enabled:
         lr_scheduler_type = scheduler_config.type
         if lr_scheduler_type == "plateau":
@@ -143,7 +154,7 @@ def init_logging(config: Config,
                  train_dataloaders: list[DataLoader]
                  ) -> tuple[int, int]:
     logging_config: Config = config.logging
-    nb_batches: int = len(train_dataloaders[0] * len(train_dataloaders))
+    nb_batches: int = len(train_dataloaders[0])
     # Calculate the batch_index at which to print
     print_points: int = nb_batches // logging_config.print_points
     logging.debug(f"nb_batches: {nb_batches}")
@@ -154,7 +165,47 @@ def init_logging(config: Config,
     return print_points, nb_batches
 
 
+def plot_loss(queue: mp.Queue):
+    plt.ion()
+    fig, ax = plt.subplots()
+    print_points = []
+    losses = []
+    test_losses = []
+    queue.put("OK")
+    while True:
+        if not queue.empty():
+            if queue.get() == "stop":
+                break
+        while not queue.empty():
+            loss, test_loss, repetition, print_point = queue.get()
+            losses.append(loss)
+            test_losses.append(test_loss)
+            print_points.append(print_point)
+            ax.clear()
+            ax.plot(print_points, losses, label="Train loss")
+            ax.plot(print_points, test_losses, label="Test loss")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Loss")
+            ax.legend()
+            plt.pause(0.01)
+
+
+def launch_plotter(queue: mp.Queue) -> bool:
+    while True:
+        if not queue.empty():
+            if queue.get() == "OK":
+                print("Plot process started and ready.")
+                return True
+
+
 def main(config: Config):
+    queue = mp.Queue()
+    plotter = mp.Process(target=plot_loss, args=(queue,))
+    plotter.start()
+    
+    if not launch_plotter(queue):
+        print("Failed to start plotter process.")
+    
     # Set device to GPU if available
     if cuda_is_available():
         device = set_device("cuda")
@@ -167,7 +218,7 @@ def main(config: Config):
 
     # Initialize dataloaders
     train_dataloaders, test_dataloaders, val_dataloaders = \
-        init_dataloaders(config)
+        init_dataloaders(config, data, target)
 
     # Training initalization
     training_config: Config = config.training
@@ -177,15 +228,15 @@ def main(config: Config):
     criterion = criterion_options[training_config.loss_function]()
 
     # Logging initialization
-    print_points = init_logging(config, train_dataloaders)
+    print_points, nb_batches = init_logging(config, train_dataloaders)
 
     # Array to store the lresults of each repetition
     loss_arrays: np.ndarray = np.zeros(
-        (config.experiment.repetitions, print_points * epochs),
+        (config.experiment.repetitions, config.logging.print_points * epochs),
         dtype=float
     )
     test_loss_arrays: np.ndarray = np.zeros(
-        (config.experiment.repetitions, print_points * epochs),
+        (config.experiment.repetitions, config.logging.print_points * epochs),
         dtype=float)
     model_list: np.ndarray = np.empty(config.experiment.repetitions,
                                       dtype=object)
@@ -193,58 +244,64 @@ def main(config: Config):
                                           dtype=object)
     scheduler_list: np.ndarray = np.empty(config.experiment.repetitions,
                                           dtype=object)
-
+    
     # EXPERIMENT LOOP #
-    for repetition in range(config.experiment.repetitions):
-        print(
-            f"\nStarting repetition "
-            f"{repetition + 1}/{config.experiment.repetitions} "
-            f"of experiment: {config.experiment.experiment_name}")
-        start_time: float = perf_counter()
+    try:
+        for repetition in range(config.experiment.repetitions):
+            print(
+                f"\nStarting repetition "
+                f"{repetition + 1}/{config.experiment.repetitions} "
+                f"of experiment: {config.experiment.experiment_name}")
+            start_time: float = perf_counter()
 
-        # Initialize or reset
-        model: DynamicModel = init_model(config)
-        optimizer = init_optimizer(config, model)
-        scheduler = init_scheduler(config, optimizer)
+            # Initialize or reset
+            model: DynamicModel = init_model(config).to(device)
+            optimizer: Optimizer = init_optimizer(config, model)
+            scheduler: Module = init_scheduler(config, optimizer)
 
-        output_folder: Path = Path()
-        if config.logging.save_plot_on_time:
-            output_folder = config.experiment.output_folder / \
-                f"repetition_{repetition + 1}" / "figures"
-            output_folder.mkdir(parents=True, exist_ok=True)
+            output_folder: Path = Path()
+            if config.logging.save_plot_on_time:
+                output_folder = config.experiment.output_folder / \
+                    f"repetition_{repetition + 1}" / "figures"
+                output_folder.mkdir(parents=True, exist_ok=True)
 
-        # Train
-        model = train(
-            model,
-            epochs,
-            train_dataloaders,
-            test_dataloaders,
-            optimizer,
-            criterion,
-            scheduler,
-            max_input_shape,
-            device,
-            print_points,
-            config.logging.print_points,
-            loss_arrays,
-            test_loss_arrays,
-            repetition,
-            config.logging.save_plot_on_time,
-            output_folder)
+            # Train
+            model = train(
+                model,
+                epochs,
+                nb_batches,
+                config.dataset.batch_size,
+                train_dataloaders,
+                test_dataloaders,
+                optimizer,
+                criterion,
+                scheduler,
+                max_input_shape,
+                device,
+                print_points,
+                config.logging.print_points,
+                loss_arrays,
+                test_loss_arrays,
+                repetition,
+                queue)
 
-        # print time in hh:mm:ss
-        elapsed_time: float = perf_counter() - start_time
-        if elapsed_time >= 60:
-            minutes = int(elapsed_time // 60)
-            seconds = int(elapsed_time % 60)
-            formatted_time = f"{minutes:02}min {seconds:02}s"
-        else:
-            formatted_time = f"{elapsed_time:.2f}s"
-        print(f"Repetition {repetition + 1} ended after {formatted_time}.")
+            # print time in hh:mm:ss
+            elapsed_time: float = perf_counter() - start_time
+            if elapsed_time >= 60:
+                minutes = int(elapsed_time // 60)
+                seconds = int(elapsed_time % 60)
+                formatted_time = f"{minutes:02}min {seconds:02}s"
+            else:
+                formatted_time = f"{elapsed_time:.2f}s"
+            print(f"Repetition {repetition + 1} ended after {formatted_time}.")
 
-        model_list.append(model)
-        optimizer_list.append(optimizer)
-        scheduler_list.append(scheduler)
+            model_list[repetition] = model
+            optimizer_list[repetition] = optimizer
+            scheduler_list[repetition] = scheduler
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    queue.put("stop")
+    plotter.terminate()
 
     loss_array_mean = np.mean(loss_arrays, axis=0)
     loss_array_std = np.std(loss_arrays, axis=0)

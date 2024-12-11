@@ -41,10 +41,6 @@ class Config:
                 for index, item in enumerate(value):
                     if isinstance(item, dict):
                         value[index] = Config(item)
-                    else:
-                        raise ValueError(
-                            f"Expected a dictionary, got {item} of type "
-                            f"{type(item)} at index {index} of list {key}.")
             else:
                 raise ValueError(
                     f"Expected a dictionary or a list, got {value} of type "
@@ -294,7 +290,7 @@ class Config:
 
         # Check if the selected optimizer is implemented
         implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
-        assert self.training.optimizer in implemented_optimizers, \
+        assert self.training.optimizer.type in implemented_optimizers, \
             (f"Optimizer must be one of {implemented_optimizers}. "
              f"You have {self.training.optimizer}.")
 

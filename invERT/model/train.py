@@ -1,4 +1,3 @@
-import logging
 from tqdm import tqdm
 from torch import Tensor, float32, no_grad, tensor
 from torch.utils.data import DataLoader
@@ -8,12 +7,66 @@ from torch.optim import Optimizer
 from model.models import DynamicModel
 import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
 from data.data import denormalize
+import multiprocessing as mp
+
+
+def test(model: DynamicModel,
+         batch: int,
+         batch_size: int,
+         print_points: int,
+         nb_print_points: int,
+         epoch: int,
+         device: str,
+         test_dataloaders: list[DataLoader],
+         input_max_shape: int,
+         criterion: Module,
+         loss_arrays: np.ndarray[float],
+         test_loss_arrays: np.ndarray[float],
+         batch_loss_value: Tensor,
+         repetition: int,
+         queue: mp.Queue
+         ):
+    print_point: int = (batch // print_points) \
+        + nb_print_points * epoch
+    model.eval()
+    test_batch_loss_value: Tensor = tensor(0, 
+                                           dtype=float32).to(device)
+    for test_dataloader in test_dataloaders:
+        test_inputs, test_targets = next(iter(test_dataloader))
+        with no_grad():
+            test_inputs: Tensor = test_inputs.to(device)
+            test_targets: Tensor = test_targets.to(device)
+            test_input_metadata: Tensor = tensor(
+                [
+                    test_inputs.shape[1] / input_max_shape,
+                    test_inputs.shape[2] / input_max_shape],
+                dtype=float32).to(device)
+            test_outputs = model(
+                test_input_metadata.unsqueeze(0),
+                test_inputs)
+
+            # Compute the loss
+            test_loss = criterion(
+                test_outputs,
+                test_targets)
+            test_batch_loss_value += test_loss
+
+    test_batch_loss_value /= batch_size
+    loss_arrays[repetition, print_point] = batch_loss_value.item()
+    test_loss_arrays[repetition, print_point] = \
+        test_batch_loss_value.item()
+
+    queue.put((batch_loss_value.item(),
+               test_batch_loss_value.item(),
+               repetition,
+               print_point))
 
 
 def train(model: DynamicModel,
           epochs: int,
+          nb_batches: int,
+          batch_size: int,
           train_dataloaders: list[DataLoader],
           test_dataloaders: list[DataLoader],
           optimizer: Optimizer,
@@ -26,52 +79,42 @@ def train(model: DynamicModel,
           loss_arrays: np.ndarray[float],
           test_loss_arrays: np.ndarray[float],
           repetition: int,
-          save_plot_on_time: bool,
-          output_folder: Path
+          queue: mp.Queue,
           ) -> tuple[list[float], list[float], DynamicModel]:
-    nb_batches: int = len(train_dataloaders) * len(train_dataloaders[0])
     for epoch in range(epochs):
-        nbr_steps_total: int = nb_batches * epoch
         for batch in tqdm(range(nb_batches)):
-            for dataloader_idx, train_dataloader in enumerate(
-                    train_dataloaders):
+            for train_dataloader in train_dataloaders:
                 # Clear previous gradients
                 optimizer.zero_grad()
+                # Initialize the batch loss value
                 batch_loss_value: Tensor = \
-                    tensor([0], dtype=float32).to(device)
+                    tensor(0, dtype=float32).to(device)
 
+                # Get the inputs and targets and send them to the device
                 inputs, targets = next(iter(train_dataloader))
-                logging.debug(
-                    f"Input shape: {inputs.shape}, "
-                    f"target shape: {targets.shape}")
                 inputs: Tensor = inputs.to(device)
                 targets: Tensor = targets.to(device)
-                logging.debug(
-                    f"Input shape: {inputs.shape}, "
-                    f"target shape: {targets.shape}")
-                logging.debug(
-                    f"Input device: {inputs.device}, "
-                    f"target device: {targets.device}")
 
+                # Compute the input metadata
                 inputs_metadata: Tensor = tensor(
                     [
                         inputs.shape[1] / input_max_shape,
-                        inputs.shape[2] / input_max_shape],
+                        inputs.shape[2] / input_max_shape
+                    ],
                     dtype=float32).to(device)
 
-                logging.debug(f"input_metadata shape: {inputs_metadata.shape}")
-                logging.debug(
-                    f"input_metadata.unsqueeze(0) shape: "
-                    f"{inputs_metadata.unsqueeze(0).shape}")
+                # Forward pass
                 outputs: Tensor = model(inputs_metadata.unsqueeze(0), inputs)
 
-                # Compute the loss
-                # Avoid to evaluate borders artifacts
-                loss_value: Tensor = criterion(outputs, targets)
-                batch_loss_value += loss_value
+                # Compute the mini_batch loss
+                mini_batch_loss_value: Tensor = criterion(outputs, targets)
 
-            batch_loss_value /= (train_dataloader.batch_size
-                                 * len(train_dataloaders))
+                # Accumulate the mini_batch loss
+                batch_loss_value += mini_batch_loss_value
+
+            # Compute the average loss over the mini-batches
+            batch_loss_value /= batch_size
+            # Backward pass
             batch_loss_value.backward()
 
             # Gradient clipping
@@ -82,58 +125,29 @@ def train(model: DynamicModel,
             #     if param.grad is None:
             #         print(f"Grad for {name}: None")
 
+            # Update the weights
             optimizer.step()
 
             if (batch + 1) % print_points == 0:  # Test loss evaluation
-                print_point: int = (batch // print_points) \
-                    + nb_print_points * epoch
-                model.eval()
-                test_batch_loss_value: Tensor = tensor(
-                    [0], dtype=float32).to(device)
-                for test_dataloader in test_dataloaders:
-                    test_inputs, test_targets = next(iter(test_dataloader))
-                    with no_grad():
-                        test_inputs: Tensor = test_inputs.to(device)
-                        test_targets: Tensor = test_targets.to(device)
-                        test_input_metadata: Tensor = tensor(
-                            [
-                                test_inputs.shape[1] / input_max_shape,
-                                test_inputs.shape[2] / input_max_shape],
-                            dtype=float32).to(device)
-                        test_outputs = model(
-                            test_input_metadata.unsqueeze(0),
-                            test_inputs)
-
-                        # Compute the loss
-                        # Avoid to evaluate borders artifacts
-                        test_loss = criterion(
-                            test_outputs,
-                            test_targets)
-                        test_batch_loss_value += test_loss
-
-                test_batch_loss_value /= (test_dataloader.batch_size
-                                          * len(test_dataloaders))
-                loss_arrays[repetition, print_point] = batch_loss_value.item()
-                test_loss_arrays[repetition, print_point] = \
-                    test_batch_loss_value.item()
-                if save_plot_on_time:
-                    plt.plot(
-                        loss_arrays[repetition, :print_point],
-                        label="Train loss"
-                    )
-                    plt.plot(
-                        test_loss_arrays[repetition, :print_point],
-                        label="Test loss"
-                    )
-                    plt.legend(["train", "test"])
-                    plt.xlabel("Step")
-                    plt.ylabel("Loss")
-                    plt.title("Train and test loss")
-                    plt.savefig(output_folder / (
-                        f"loss_at_step_{nbr_steps_total + batch}.png"))
-                    plt.close()
-
+                test_batch_loss_value = test(model,
+                                             batch,
+                                             batch_size,
+                                             print_points,
+                                             nb_print_points,
+                                             epoch,
+                                             device,
+                                             test_dataloaders,
+                                             input_max_shape,
+                                             criterion,
+                                             loss_arrays,
+                                             test_loss_arrays,
+                                             batch_loss_value,
+                                             repetition,
+                                             queue)
+        # Update the learning rate if needed
         scheduler.step(test_batch_loss_value)
+
+        # Print the loss values
         print(
             f"Epoch [{epoch + 1}/{epochs}], ",
             f"train loss: {batch_loss_value.item():.5f}, "

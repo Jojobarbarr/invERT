@@ -6,6 +6,37 @@ from torch.utils.data import Dataset, DataLoader, random_split
 logging.basicConfig(level=logging.INFO)
 
 
+class CustomDataset(Dataset):
+    def __init__(self,
+                 data: Tensor,
+                 ):
+        """
+        Initialize the dataset with data that is either data or target.
+
+        The dataset is composed of data. The data is a tensor of shape
+        (num_samples, 1, width, height).
+
+        @param data: The data tensor.
+        """
+        self.data: Tensor = data
+
+    def __len__(self) -> int:
+        """
+        Return the total number of samples in the dataset.
+
+        @return: The total number of samples in the dataset.
+        """
+        return len(self.data)
+
+    def __getitem__(self,
+                    idx: int
+                    ) -> Tensor:
+        assert idx < len(self), \
+            (f"Index {idx} is out of bounds for the dataset with length "
+             f"{len(self)}.")
+        return self.data[idx]
+
+
 class IrregularDataset(Dataset):
     def __init__(self,
                  data: list[Tensor],
@@ -22,10 +53,11 @@ class IrregularDataset(Dataset):
         @param data: The list of data tensors.
         @param targets: The list of target tensors.
         """
-        self.data: list[Dataset] = [Dataset(data_chunk)
-                                    for data_chunk in data]
-        self.targets: list[Dataset] = [Dataset(target_chunk)
-                                       for target_chunk in targets]
+        self.data: list[CustomDataset] = [
+            CustomDataset(data_chunk) for data_chunk in data
+        ]
+        self.targets: list[CustomDataset] = [
+            CustomDataset(target_chunk) for target_chunk in targets]
 
     def __len__(self) -> int:
         """
@@ -36,7 +68,7 @@ class IrregularDataset(Dataset):
 
         @return: The total number of samples in the dataset.
         """
-        return len(self.data) * len(self.data[0])
+        return sum(len(sub_group) for sub_group in self.data)
 
     def len_sub_group(self) -> int:
         """
@@ -46,14 +78,23 @@ class IrregularDataset(Dataset):
         """
         return len(self.data[0])
 
-    def __getitem__(
-        self,
-        idx: int | slice
-    ) -> tuple[Tensor, Tensor] | list[tuple[Tensor, Tensor]]:
-        assert idx < len(self), \
-            (f"Index {idx} is out of bounds for the dataset with length "
-             f"{len(self)}.")
-        return self.data[idx], self.targets[idx]
+    def __getitem__(self,
+                    idx: int,
+                    ) -> tuple[Tensor, Tensor]:
+        cumulative_length = 0
+        if isinstance(idx, int):  # Handle single index
+            for group_data, group_targets in zip(self.data, self.targets):
+                if idx < cumulative_length + len(group_data):
+                    local_idx = idx - cumulative_length
+                    return group_data[local_idx], group_targets[local_idx]
+                cumulative_length += len(group_data)
+            raise IndexError(f"Index {idx} out of bounds")
+        elif isinstance(idx, slice):  # Handle slice
+            indices = range(*idx.indices(len(self)))
+            samples = [self[i] for i in indices]
+            return samples
+        else:
+            raise TypeError(f"Unsupported index type: {type(idx)}")
 
 
 def initialize_datasets(data: list[Tensor],
@@ -61,6 +102,7 @@ def initialize_datasets(data: list[Tensor],
                         batch_size: int,
                         batch_mixture: int,
                         num_sub_group: int,
+                        sub_group_size: int,
                         test_split: float,
                         validation_split: float,
                         ) -> tuple[
@@ -73,18 +115,19 @@ def initialize_datasets(data: list[Tensor],
 
     mini_batch_size: int = batch_size // batch_mixture
     sub_groups_size: int = dataset.len_sub_group()
-    train_size: int = int((1 - test_split - validation_split)
-                          * sub_groups_size)
-    test_size: int = int(test_split * sub_groups_size)
-    val_size: int = sub_groups_size - train_size - test_size
+    train_size: int = sub_group_size
+    test_size: int = int(test_split * train_size)
+    val_size: int = int(validation_split * train_size)
 
     train_dataloaders: list[DataLoader] = []
     test_dataloaders: list[DataLoader] = []
     val_dataloaders: list[DataLoader] = []
 
     for group_idx in range(num_sub_group):
+        start_idx = group_idx * sub_groups_size
+        end_idx = (group_idx + 1) * sub_groups_size
         train_dataset, test_dataset, val_dataset = random_split(
-            dataset[group_idx], [train_size, test_size, val_size])
+            dataset[start_idx:end_idx], [train_size, test_size, val_size])
 
         train_dataloader = DataLoader(
             train_dataset,
@@ -189,8 +232,8 @@ def generate_data(num_samples: int,
     sub_group_sample_size: int = num_samples // num_sub_groups
     for _ in range(num_sub_groups):
         # Generate a sub-dataset with a uniform random shape
-        width: int = randint(data_min_size, data_max_size, 1).item()
-        height: int = randint(data_min_size, data_max_size, 1).item()
+        width: int = randint(data_min_size, data_max_size, (1,)).item()
+        height: int = randint(data_min_size, data_max_size, (1,)).item()
         data_shape: tuple[int, int, int, int] = (sub_group_sample_size,
                                                  1,  # Number of channels
                                                  width,
