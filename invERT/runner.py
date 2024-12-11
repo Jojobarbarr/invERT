@@ -252,6 +252,7 @@ def main(config: Config):
                 f"\nStarting repetition "
                 f"{repetition + 1}/{config.experiment.repetitions} "
                 f"of experiment: {config.experiment.experiment_name}")
+            # To time the execution of a repetition
             start_time: float = perf_counter()
 
             # Initialize or reset
@@ -260,10 +261,9 @@ def main(config: Config):
             scheduler: Module = init_scheduler(config, optimizer)
 
             output_folder: Path = Path()
-            if config.logging.save_plot_on_time:
-                output_folder = config.experiment.output_folder / \
-                    f"repetition_{repetition + 1}" / "figures"
-                output_folder.mkdir(parents=True, exist_ok=True)
+            output_folder = config.experiment.output_folder / \
+                f"repetition_{repetition + 1}" / "figures"
+            output_folder.mkdir(parents=True, exist_ok=True)
 
             # Train
             model = train(
