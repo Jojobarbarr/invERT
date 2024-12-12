@@ -270,26 +270,26 @@ def main(config: Config):
 
         testing_params: TestingParameters = \
             TestingParameters(repetition,
-                                loss_arrays,
-                                test_loss_arrays,
-                                print_points,
-                                nb_print_points,
-                                queue,
-                                0)
+                              loss_arrays,
+                              test_loss_arrays,
+                              print_points,
+                              nb_print_points,
+                              queue,
+                              0)
 
         # Train
         model = train(model,
                       epochs,
-                        nb_batches,
-                        train_dataloaders,
-                        test_dataloaders,
-                        optimizer,
-                        criterion,
-                        input_max_shape,
-                        device,
-                        scheduler,
-                        testing_params
-                        )
+                      nb_batches,
+                      train_dataloaders,
+                      test_dataloaders,
+                      optimizer,
+                      criterion,
+                      input_max_shape,
+                      device,
+                      scheduler,
+                      testing_params
+                      )
 
         # print time in hh:mm:ss
         elapsed_time: float = perf_counter() - start_time

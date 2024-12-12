@@ -105,8 +105,6 @@ class DynamicConvNet(nn.Module):
         for kernel in kernels:
             x = F.conv2d(x, kernel, padding="same")
 
-
-
         idx_list = []
         for layer_index in range(len(self.nbr_kernels)):
             if layer_index == 0:
