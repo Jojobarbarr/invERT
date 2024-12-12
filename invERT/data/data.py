@@ -241,11 +241,11 @@ def generate_data(num_samples: int,
 
         # Generate a tensor with shape data_shape, with random values between
         # 500 and 1500
-        data_chunk: Tensor = 1000 * rand(data_shape) + 500
+        target_chunk: Tensor = 1000 * rand(data_shape) + 500
 
         # Generate the target tensor by applying the target function to the
         # data tensor
-        target_chunk: Tensor = target_func(data_chunk, noise)
+        data_chunk: Tensor = target_func(target_chunk, noise)
 
         data.append((data_chunk, target_chunk))
 
