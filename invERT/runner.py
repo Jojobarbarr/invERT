@@ -376,15 +376,12 @@ def main(config: Config):
     plt.tight_layout()  # Optimize spacing
     plt.show()
 
-    print_model_results(
-        model_list,
-        val_dataloaders,
-        device,
-        input_max_shape,
-        min_data,
-        max_data,
-        min_target,
-        max_target)
+    print_model_results(model_list,
+                        val_dataloaders,
+                        input_max_shape,
+                        device,
+                        min_target,
+                        max_target)
 
 
 if __name__ == "__main__":
