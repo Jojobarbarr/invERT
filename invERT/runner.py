@@ -87,19 +87,19 @@ def init_model(config: Config) -> DynamicModel:
     mlp_config: Config = config.model.mlp
     cnn_config: Config = config.model.cnn
 
-    num_filters: list[int] = []
-    kernel_sizes: list[int] = []
+    in_channels: list[int] = []
+    kernel_shapes: list[int] = []
     for conv_layer in cnn_config.conv_layers:
-        # /!\ last filter number must be 1
-        num_filters.append(conv_layer.filters)
-        kernel_sizes.append(conv_layer.kernel_size)
+        in_channels.append(conv_layer.in_channels)
+        kernel_shapes.append(conv_layer.kernel_shape)
 
     model = DynamicModel(
-        mlp_config.input_size,
-        mlp_config.hidden_layers,
-        num_filters,
-        kernel_sizes,
-        cnn_config.input_channels)
+        mlp_config.input_metadata_dim,
+        mlp_config.hidden_dims,
+        in_channels,
+        cnn_config.out_channels,
+        kernel_shapes
+    )
 
     return model
 
@@ -269,12 +269,13 @@ def main(config: Config):
         output_folder.mkdir(parents=True, exist_ok=True)
 
         testing_params: TestingParameters = \
-            TestingParameters(repetition,
-                              loss_arrays,
+            TestingParameters(loss_arrays,
                               test_loss_arrays,
+                              repetition,
                               print_points,
                               nb_print_points,
                               queue,
+                              0,
                               0)
 
         # Train

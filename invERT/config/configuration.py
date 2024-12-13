@@ -281,13 +281,6 @@ class Config:
              f"and a validation_split = {self.dataset.validation_split} "
              f"(sum is {data_left}).")
 
-        # Check if the number of filters in the last convolutional layer is 1
-        output_filter: int = 1
-        last_layer_filter_number: int = self.model.cnn.conv_layers[-1].filters
-        assert last_layer_filter_number == output_filter, \
-            (f"The number of filters in the last convolutional layer must be "
-             f"{output_filter}. You have {last_layer_filter_number}.")
-
         # Check if the selected optimizer is implemented
         implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
         assert self.training.optimizer.type in implemented_optimizers, \

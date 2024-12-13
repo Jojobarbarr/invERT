@@ -10,5 +10,6 @@ class TestingParameters:
     repetition: int
     print_points: int
     nb_print_points: int
-    epoch: int
     queue: mp.Queue
+    epoch: int
+    batch_loss: float

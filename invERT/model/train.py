@@ -51,7 +51,7 @@ def test(model: DynamicModel,
          device: str,
          testing_params: TestingParameters,
          ):
-    batch_loss_value: Tensor = testing_params["batch_loss_value"]
+    batch_loss_value: Tensor = testing_params.batch_loss_value
     model.eval()
     test_batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
     for test_dataloader in test_dataloaders:
@@ -69,10 +69,12 @@ def test(model: DynamicModel,
         test_batch_loss_value.item()
 
     # Send the losses to the queue
-    queue.put((batch_loss_value.item(),
-               test_batch_loss_value.item(),
-               repetition,
-               print_point))
+    if queue is not None:
+        queue.put((batch_loss_value.item(),
+                   test_batch_loss_value.item(),
+                   repetition,
+                   print_point))
+    return test_batch_loss_value
 
 
 def process_mini_batch(model: DynamicModel,
@@ -89,8 +91,6 @@ def process_mini_batch(model: DynamicModel,
     inputs: Tensor = inputs.to(device)
     targets: Tensor = targets.to(device)
 
-    print(f"inputs.shape: {inputs.shape}, targets.shape: {targets.shape}")
-
     # Compute the input metadata and send it to the device
     # TODO: Check if this is correct
     inputs_metadata: Tensor = tensor(
@@ -100,7 +100,6 @@ def process_mini_batch(model: DynamicModel,
         ]
         * mini_batch_size
     ).view(mini_batch_size, 2).to(device)
-    print(f"inputs_metadata.shape: {inputs_metadata.shape}")
 
     # Forward pass
     outputs: Tensor = model(inputs_metadata, inputs)
@@ -139,18 +138,20 @@ def process_batch(model: DynamicModel,
     # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
     # Check if there are any None gradients
-    # for name, param in model.named_parameters():
-    #     if param.grad is None:
-    #         print(f"Grad for {name}: None")
+    for name, param in model.named_parameters():
+        if param.grad is None:
+            print(f"Grad for {name}: None")
 
     # Update the weights
     optimizer.step()
     print_points: int = testing_params.print_points
     nb_print_points: int = testing_params.nb_print_points
     epoch: int = testing_params.epoch
+    test_batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
     if (batch + 1) % print_points == 0:  # Test loss evaluation
         print_point: int = (batch // print_points) \
             + nb_print_points * epoch
+        testing_params.batch_loss_value = batch_loss_value
         test_batch_loss_value = test(model,
                                      print_point,
                                      test_dataloaders,
@@ -159,7 +160,7 @@ def process_batch(model: DynamicModel,
                                      device,
                                      testing_params,
                                      )
-    return test_batch_loss_value
+    return batch_loss_value, test_batch_loss_value
 
 
 def process_epoch(model: DynamicModel,
@@ -229,47 +230,43 @@ def train(model: DynamicModel,
     return model
 
 
-def print_model_results(
-    model_list: list[DynamicModel],
-    val_dataloaders: DataLoader,
-    device: str,
-    max_input_shape: int,
-    min_data: float,
-    max_data: float,
-    min_target: float,
-    max_target: float
-) -> None:
+def print_model_results(model_list: list[DynamicModel],
+                        val_dataloaders: DataLoader,
+                        input_max_shape: int,
+                        device: str,
+                        min_target: float,
+                        max_target: float
+                        ) -> None:
     model = model_list[0]
     with no_grad():
         model.eval()
         for val_dataloader in val_dataloaders:
             val_inputs, val_targets = next(iter(val_dataloader))
 
+            mini_batch_size: int = val_inputs.shape[0]
+
             val_inputs: Tensor = val_inputs.to(device)
             val_targets: Tensor = val_targets.to(device)
             val_input_metadata: Tensor = tensor(
                 [
-                    val_inputs.shape[1] / max_input_shape,
-                    val_inputs.shape[2] / max_input_shape],
-                dtype=float32).to(device)
+                    val_inputs.shape[2] / input_max_shape,
+                    val_inputs.shape[3] / input_max_shape
+                ]
+                * mini_batch_size,
+                ).view(mini_batch_size, 2).to(device)
+            
             val_outputs: Tensor = model(
-                val_input_metadata.unsqueeze(0),
+                val_input_metadata,
                 val_inputs)
 
-        print(
-            f"val_inputs shape: {val_inputs.shape}, "
-            f"val_outputs shape: {val_outputs.shape}")
         # Denormalize the data
         val_targets: np.ndarray[float, float] = denormalize(
             val_targets,
-            min_target, max_target)[12, 0].detach().cpu().numpy()
+            min_target, max_target)[0, 0].detach().cpu().numpy()
         val_outputs: np.ndarray[float, float] = denormalize(
             val_outputs,
-            min_target, max_target)[12, 0].detach().cpu().numpy()
+            min_target, max_target)[0, 0].detach().cpu().numpy()
 
-        print(
-            f"target shape: {val_targets.shape}, "
-            f"output shape: {val_outputs.shape}")
         error_map = np.abs(val_targets - val_outputs) / val_targets
 
         # Create subplots: 1 row, 3 columns
