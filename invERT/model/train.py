@@ -253,8 +253,8 @@ def print_model_results(model_list: list[DynamicModel],
                     val_inputs.shape[3] / input_max_shape
                 ]
                 * mini_batch_size,
-                ).view(mini_batch_size, 2).to(device)
-            
+            ).view(mini_batch_size, 2).to(device)
+
             val_outputs: Tensor = model(
                 val_input_metadata,
                 val_inputs)
