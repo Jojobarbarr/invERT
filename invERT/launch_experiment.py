@@ -161,8 +161,9 @@ def main():
         return
 
     # Overrides if any override arguments are provided
-    overrides: dict[str, str] = override_config(args.override)
-    config.update(overrides)
+    if len(args.override) > 0:
+        overrides: dict[str, str] = override_config(args.override)
+        config.update(overrides)
 
     # Save the updated config to the experiment result folder
     save_config(config, args.yes)
