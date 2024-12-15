@@ -42,7 +42,7 @@
         "type": "string",
       },
       "enabled": {
-        "value": true,
+        "value": "true",
         "type": "bool",
       },
       "factor": {
@@ -115,32 +115,32 @@
       "conv_layers": [
         {
           "in_channels": {
-            value: 1,
-            type: "int",
+            "value": 1,
+            "type": "int",
           },
           "kernel_shape": {
-            value: 3,
-            type: "int",
+            "value": 3,
+            "type": "int",
           },
         }, 
         {
           "in_channels": {
-            value: 8,
-            type: "int",
+            "value": 8,
+            "type": "int",
           },
           "kernel_shape": {
-            value: 3,
-            type: "int",
+            "value": 3,
+            "type": "int",
           },
         }, 
         {
           "in_channels": {
-            value: 16,
-            type: "int",
+            "value": 16,
+            "type": "int",
           },
           "kernel_shape": {
-            value: 3,
-            type: "int",
+            "value": 3,
+            "type": "int",
           },
         }, 
       ],
