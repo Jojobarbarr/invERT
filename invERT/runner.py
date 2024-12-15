@@ -336,29 +336,41 @@ def main(config: Config):
     }
     torch_save(state, config.experiment.output_folder / "best_model.pth")
 
+    burn_in: int = 2
     # Plot results
     for repetition in range(config.experiment.repetitions):
-        plt.plot(loss_arrays[repetition], label=f"Repetition {repetition + 1}")
+        color = plt.cm.tab10(repetition % 10)
+        plt.plot(
+            loss_arrays[repetition][burn_in:], 
+            label=f"Repetition {repetition + 1}",
+            color=color,
+        )
+        plt.plot(
+            test_loss_arrays[repetition][burn_in:],
+            label=f"Repetition {repetition + 1} (test)",
+            color=color,
+            alpha=0.7
+        )
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
-    plt.title("Training loss")
+    plt.title("Training and testing loss")
     plt.legend()
-    plt.savefig(config.experiment.output_folder / "training_loss.png")
+    plt.savefig(config.experiment.output_folder / "training_testing_loss.png")
     plt.show()
 
-    # Plot and save mean and std
+    # Plot and save mean and std train_loss
     plt.figure(figsize=(10, 6))  # Set figure size for better visibility
     plt.plot(
-        range(len(loss_array_mean)),
-        loss_array_mean,
+        range(len(loss_array_mean[burn_in:])),
+        loss_array_mean[burn_in:],
         label="Training Loss",
         color="blue",
         linewidth=2
     )  # Main line for the mean
     plt.fill_between(
-        range(len(loss_array_mean)),
-        loss_array_mean - loss_array_std,
-        loss_array_mean + loss_array_std,
+        range(len(loss_array_mean[burn_in:])),
+        loss_array_mean[burn_in:] - loss_array_std[burn_in:],
+        loss_array_mean[burn_in:] + loss_array_std[burn_in:],
         color="lightblue",
         alpha=0.8,
         label="Standard Deviation"
@@ -377,6 +389,39 @@ def main(config: Config):
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
     plt.savefig(config.experiment.output_folder / "training_loss_mean.png")
+    plt.show()
+
+    # Plot and save mean and std test_loss
+    plt.figure(figsize=(10, 6))  # Set figure size for better visibility
+    plt.plot(
+        range(len(test_loss_array_mean[burn_in:])),
+        test_loss_array_mean[burn_in:],
+        label="Testing Loss",
+        color="blue",
+        linewidth=2
+    )  # Main line for the mean
+    plt.fill_between(
+        range(len(test_loss_array_mean[burn_in:])),
+        test_loss_array_mean[burn_in:] - test_loss_array_std[burn_in:],
+        test_loss_array_mean[burn_in:] + test_loss_array_std[burn_in:],
+        color="lightblue",
+        alpha=0.8,
+        label="Standard Deviation"
+    )  # Shaded area for standard deviation
+
+    plt.xlabel("Iteration", fontsize=14)  # Increase font size for labels
+    plt.ylabel("Loss", fontsize=14)
+    plt.title(
+        f"Testing Loss Mean over {config.experiment.repetitions} Repetitions",
+        fontsize=16
+    )
+    plt.xticks(fontsize=12)  # Adjust font size for tick labels
+    plt.yticks(fontsize=12)
+    plt.grid(
+        True, linestyle="--", alpha=0.8)  # Add a grid for better readability
+    plt.legend(fontsize=12)  # Adjust legend font size
+    plt.tight_layout()  # Optimize spacing
+    plt.savefig(config.experiment.output_folder / "testing_loss_mean.png")
     plt.show()
 
     print_model_results(model_list,
