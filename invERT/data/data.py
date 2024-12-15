@@ -248,7 +248,7 @@ def generate_data(num_samples: int,
         data_chunk: Tensor = target_func(target_chunk, noise)
 
         data.append((data_chunk, target_chunk))
-    
+
     return data
 
 
