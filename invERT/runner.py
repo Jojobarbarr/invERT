@@ -341,7 +341,7 @@ def main(config: Config):
     for repetition in range(config.experiment.repetitions):
         color = plt.cm.tab10(repetition % 10)
         plt.plot(
-            loss_arrays[repetition][burn_in:], 
+            loss_arrays[repetition][burn_in:],
             label=f"Repetition {repetition + 1}",
             color=color,
         )
