@@ -102,7 +102,7 @@ def load_config(config_file: Path
     except FileNotFoundError:
         print(f"Configuration file not found: {config_file}, exiting.")
         return None
-    print(f"\nSuccessfully loaded configuration file: {config_file}\n")
+    print(f"\nSuccessfully loaded configuration file: {config_file.name}\n")
     return config
 
 
