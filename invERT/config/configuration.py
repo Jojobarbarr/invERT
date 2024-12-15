@@ -2,7 +2,7 @@ from json5 import dump as json_dump
 from pathlib import Path
 from copy import deepcopy
 from datetime import datetime
-from typing import TypeVar, Self
+from typing import TypeVar
 
 T = TypeVar('T', str, int, float, bool, Path)
 
@@ -140,7 +140,7 @@ class Config:
             setattr(sub_config, keys[-1], python_type(value))
 
     def to_dict(self,
-                obj: Self | T
+                obj: "Config" | T
                 ) -> dict[dict, dict | list | T]:
         """
         Recursively convert Config objects to dictionaries.
