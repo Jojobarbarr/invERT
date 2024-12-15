@@ -214,6 +214,7 @@ def main(config: Config):
         device = set_device("cuda")
     else:
         device = set_device("cpu")
+    print(f"Using device: {device}")
 
     # Initialize data
     data, target, input_max_shape, min_data, max_data, min_target, \
