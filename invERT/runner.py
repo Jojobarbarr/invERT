@@ -342,6 +342,7 @@ def main(config: Config):
     plt.ylabel("Loss")
     plt.title("Training loss")
     plt.legend()
+    plt.savefig(config.experiment.output_folder / "training_loss.png")
     plt.show()
 
     # Plot and save mean and std
@@ -374,6 +375,7 @@ def main(config: Config):
         True, linestyle="--", alpha=0.8)  # Add a grid for better readability
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
+    plt.savefig(config.experiment.output_folder / "training_loss_mean.png")
     plt.show()
 
     print_model_results(model_list,
@@ -381,7 +383,8 @@ def main(config: Config):
                         input_max_shape,
                         device,
                         min_target,
-                        max_target)
+                        max_target,
+                        config.experiment.output_folder)
 
 
 if __name__ == "__main__":

@@ -236,6 +236,7 @@ def print_model_results(model_list: list[DynamicModel],
                         device: str,
                         min_target: float,
                         max_target: float
+                        output_folder: Path,
                         ) -> None:
     model = model_list[0]
     with no_grad():
@@ -300,4 +301,6 @@ def print_model_results(model_list: list[DynamicModel],
 
         # Adjust layout to fit everything neatly
         plt.tight_layout()
+        
+        plt.savefig(output_folder / "results.png")
         plt.show()
