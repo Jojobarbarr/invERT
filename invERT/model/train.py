@@ -235,7 +235,7 @@ def print_model_results(model_list: list[DynamicModel],
                         input_max_shape: int,
                         device: str,
                         min_target: float,
-                        max_target: float
+                        max_target: float,
                         output_folder: Path,
                         ) -> None:
     model = model_list[0]
