@@ -301,6 +301,6 @@ def print_model_results(model_list: list[DynamicModel],
 
         # Adjust layout to fit everything neatly
         plt.tight_layout()
-        
+
         plt.savefig(output_folder / "results.png")
         plt.show()
