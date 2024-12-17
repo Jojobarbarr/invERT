@@ -117,7 +117,7 @@ def initialize_datasets(data: list[Tensor],
     sub_groups_size: int = dataset.len_sub_group()
     train_size: int = sub_group_size
     test_size: int = int(test_split * train_size)
-    val_size: int = int(validation_split * train_size)
+    val_size: int = sub_groups_size - train_size - test_size
 
     train_dataloaders: list[DataLoader] = []
     test_dataloaders: list[DataLoader] = []
@@ -132,7 +132,8 @@ def initialize_datasets(data: list[Tensor],
         train_dataloader = DataLoader(
             train_dataset,
             batch_size=mini_batch_size,
-            shuffle=True,)
+            shuffle=True,
+            )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=mini_batch_size,

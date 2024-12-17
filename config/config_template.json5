@@ -9,13 +9,13 @@
       "type": "Path",
     },
     "repetitions": {
-      "value": 3,
+      "value": 1,
       "type": "int",
     },
   },
   "training": {
     "epochs": {
-      "value": 3,
+      "value": 1,
       "type": "int",
     },
     "initial_learning_rate": {
@@ -28,7 +28,7 @@
         "type": "string",
       },
       "weight_decay": {
-        "value": 0.0,
+        "value": 0.00,
         "type": "float",
       },
     },
@@ -46,7 +46,7 @@
         "type": "bool",
       },
       "factor": {
-        "value": 0.1,
+        "value": 0.5,
         "type": "float",
       },
       "patience": {
@@ -57,17 +57,17 @@
   },
   "logging": {
     "print_points": {
-      "value": 8,
+      "value": 32,
       "type": "int",
     },
   },
   "dataset": {
     "num_samples": {
-      "value": 32768,
+      "value": 16384,
       "type": "int",
     },
     "num_sub_group": {
-      "value": 4,
+      "value": 16,
       "type": "int",
     },
     "dataset_name": {
@@ -87,7 +87,7 @@
       "type": "float",
     },
     "test_split": {
-      "value": 0.2,
+      "value": 0.1,
       "type": "float",
     },
     "validation_split": {
@@ -99,7 +99,7 @@
       "type": "int",
     },
     "batch_mixture": {
-      "value": 4,
+      "value": 16,
       "type": "int",
     },
   },
@@ -109,7 +109,7 @@
         "value": 2,
         "type": "int",
       },
-      "hidden_dims": [8, 16],
+      "hidden_dims": [64, 256],
     },
     "cnn": {
       "conv_layers": [
@@ -125,14 +125,24 @@
         }, 
         {
           "in_channels": {
-            "value": 8,
+            "value": 32,
             "type": "int",
           },
           "kernel_shape": {
             "value": 3,
             "type": "int",
           },
-        }, 
+        },
+        {
+          "in_channels": {
+            "value": 64,
+            "type": "int",
+          },
+          "kernel_shape": {
+            "value": 3,
+            "type": "int",
+          },
+        },
         {
           "in_channels": {
             "value": 16,
@@ -142,7 +152,7 @@
             "value": 3,
             "type": "int",
           },
-        }, 
+        },
       ],
       "out_channels": {
         "value": 1,

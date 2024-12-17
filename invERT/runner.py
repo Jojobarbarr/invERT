@@ -356,7 +356,7 @@ def main(config: Config):
     plt.title("Training and testing loss")
     plt.legend()
     plt.savefig(config.experiment.output_folder / "training_testing_loss.png")
-    plt.show()
+    # plt.show()
 
     # Plot and save mean and std train_loss
     plt.figure(figsize=(10, 6))  # Set figure size for better visibility
@@ -389,7 +389,7 @@ def main(config: Config):
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
     plt.savefig(config.experiment.output_folder / "training_loss_mean.png")
-    plt.show()
+    # plt.show()
 
     # Plot and save mean and std test_loss
     plt.figure(figsize=(10, 6))  # Set figure size for better visibility
@@ -422,7 +422,7 @@ def main(config: Config):
     plt.legend(fontsize=12)  # Adjust legend font size
     plt.tight_layout()  # Optimize spacing
     plt.savefig(config.experiment.output_folder / "testing_loss_mean.png")
-    plt.show()
+    # plt.show()
 
     print_model_results(model_list,
                         val_dataloaders,
