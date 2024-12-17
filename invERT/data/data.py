@@ -133,7 +133,7 @@ def initialize_datasets(data: list[Tensor],
             train_dataset,
             batch_size=mini_batch_size,
             shuffle=True,
-            )
+        )
         test_dataloader = DataLoader(
             test_dataset,
             batch_size=mini_batch_size,
