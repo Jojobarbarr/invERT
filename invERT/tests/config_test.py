@@ -1,6 +1,6 @@
 import unittest
 from invERT.config.configuration import Config
-# import shutil
+from argparse import ArgumentParser
 from pathlib import Path
 from json5 import load as json_load
 
@@ -19,26 +19,26 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(config._get_python_type("Path"), Path)
         self.assertEqual(config._get_python_type("unknown"), str)
 
-    def test__validate_type(self):
-        config = Config(CONFIG_DICT)
-        value_value = CONFIG_DICT['model']['cnn']['input_channels']['value']
-        value_type = CONFIG_DICT['model']['cnn']['input_channels']['type']
-        key = CONFIG_DICT['model']['cnn']['input_channels']
+    def test__get_typed_value(self):
+        config: Config = Config(CONFIG_DICT)
+        value_value: str = CONFIG_DICT['experiment']['experiment_name']['value']
+        value_type: str = CONFIG_DICT['experiment']['experiment_name']['type']
+        key: str = CONFIG_DICT['experiment']['experiment_name']
         self.assertEqual(
-            config._validate_type(
+            config._get_typed_value(
                 value_value,
                 value_type,
                 key),
-            1)
+            "test")
         del value_value
         del value_type
         del key
 
-        value_value = CONFIG_DICT['model']['cnn']['biais_enabled']['value']
-        value_type = CONFIG_DICT['model']['cnn']['biais_enabled']['type']
-        key = CONFIG_DICT['model']['cnn']['biais_enabled']
+        value_value: str = CONFIG_DICT['experiment']['log']['value']
+        value_type: str = CONFIG_DICT['experiment']['log']['type']
+        key: str = CONFIG_DICT['experiment']['log']
         self.assertEqual(
-            config._validate_type(
+            config._get_typed_value(
                 value_value,
                 value_type,
                 key),
@@ -47,45 +47,35 @@ class TestConfig(unittest.TestCase):
         del value_type
         del key
 
-        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0][
-            'filters']['value']
-        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0][
-            'filters']['type']
-        key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['filters']
+        value_value: str = CONFIG_DICT['model']['cnn']['conv_layers'][1]['in_channels']['value']
+        value_type: str = CONFIG_DICT['model']['cnn']['conv_layers'][1]['in_channels']['type']
+        key: str = CONFIG_DICT['model']['cnn']['conv_layers'][1]['in_channels']
         self.assertEqual(
-            config._validate_type(
+            config._get_typed_value(
                 value_value,
                 value_type,
                 key),
-            8)
+            32)
         del value_value
         del value_type
         del key
 
-        value_value = CONFIG_DICT['model']['cnn']['conv_layers'][0][
-            'padding']['value']
-        value_type = CONFIG_DICT['model']['cnn']['conv_layers'][0][
-            'padding']['type']
-        key = CONFIG_DICT['model']['cnn']['conv_layers'][0]['padding']
-        self.assertEqual(
-            config._validate_type(
-                value_value,
-                value_type,
-                key),
-            "same")
-        del value_value
-        del value_type
-        del key
-
-        value_value = CONFIG_DICT['model']['cnn']['output']['value']
-        value_type = CONFIG_DICT['model']['cnn']['output']['type']
-        key = CONFIG_DICT['model']['cnn']['output']
-        self.assertEqual(
-            config._validate_type(
-                value_value,
-                value_type,
-                key),
-            Path("./output"))
+    
+    def test_update(self):
+        config = Config(CONFIG_DICT)
+        
+        overriden_dict: dict[str, str] = {
+            'experiment.experiment_name': 'new_name',
+            'experiment.output_folder': 'other_output',
+            'experiment.log': 'true',
+            'model.cnn.conv_layers[1].kernel_shape': '5',
+            }
+        
+        config.update(overriden_dict)
+        self.assertEqual(config.experiment.experiment_name, "new_name")
+        self.assertEqual(config.experiment.output_folder, Path("other_output"))
+        self.assertTrue(config.experiment.log)
+        self.assertEqual(config.model.cnn.conv_layers[1].kernel_shape, 5)
 
 
 if __name__ == "__main__":

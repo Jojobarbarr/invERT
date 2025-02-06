@@ -1,42 +1,77 @@
 {
-    "model": {
-        "cnn": {
-            "input_channels": {
-                "value": 1,
-                "type": "int"
-            },
-            "output": {
-                "value": "./output",
-                "type": "Path"
-            },
-            "biais_enabled": {
-                "value": false,
-                "type": "bool"
-            },
-            "conv_layers": [
-                {
-                    "filters": {
-                        "value": 8,
-                        "type": "int"
-                    },
-                    "filters_name": ["conv1", "conv2", "conv3"],
-                    "padding": {
-                        "value": "same",
-                        "type": "str"
-                    }
-                },
-                {
-                    "filters": {
-                        "value": 1, // /!\ The last layer must have only 1 filter
-                        "type": "int"
-                    },
-                    "filters_name": ["conv1", "conv2", "conv3"],
-                    "padding": {
-                        "value": "same",
-                        "type": "str"
-                    }
-                }
-            ]
-        }
+  "experiment": {
+    "experiment_name": {
+      "value": "test",
+      "type": "string",
+    },
+    "output_folder": {
+      "value": "../results",
+      "type": "Path",
+    },
+    "repetitions": {
+      "value": 1,
+      "type": "int",
+    },
+    "log": {
+      "value": "false",
+      "type": "bool",
     }
+  },
+  "model": {
+    "mlp": {
+      "input_metadata_dim": {
+        "value": 2,
+        "type": "int",
+      },
+      "hidden_dims": [64, 256],
+    },
+    "cnn": {
+      "conv_layers": [
+        {
+          "in_channels": {
+            "value": 1,
+            "type": "int",
+          },
+          "kernel_shape": {
+            "value": 3,
+            "type": "int",
+          },
+        }, 
+        {
+          "in_channels": {
+            "value": 32,
+            "type": "int",
+          },
+          "kernel_shape": {
+            "value": 3,
+            "type": "int",
+          },
+        },
+        {
+          "in_channels": {
+            "value": 64,
+            "type": "int",
+          },
+          "kernel_shape": {
+            "value": 3,
+            "type": "int",
+          },
+        },
+        {
+          "in_channels": {
+            "value": 16,
+            "type": "int",
+          },
+          "kernel_shape": {
+            "value": 3,
+            "type": "int",
+          },
+        },
+      ],
+      "out_channels": {
+        "value": 1,
+        "type": "int",
+      },
+    },
+  },
 }

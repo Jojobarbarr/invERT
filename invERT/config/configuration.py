@@ -48,8 +48,6 @@ class Config:
             # Set the attribute of the Config object
             setattr(self, key, value)
 
-    def __repr__(self):
-        return str(self.__dict__)
 
     def _get_typed_value(self,
                          value: str,
@@ -70,13 +68,19 @@ class Config:
         bool, Path).
         """
         python_type: type = self._get_python_type(expected_type)
-        try:
-            value: T = python_type(value)
-        except ValueError as e:
-            raise ValueError(
-                f"\nKey '{key}' expected to be of type{expected_type}, "
-                f"but got value {value} of type {type(value)} -- "
-                f"Original error: \n{e}\n")
+        if python_type == bool:
+            if value.lower() == "true":
+                value = True
+            else:
+                value = False
+        else:
+            try:
+                value: T = python_type(value)
+            except ValueError as e:
+                raise ValueError(
+                    f"\nKey '{key}' expected to be of type{expected_type}, "
+                    f"but got value {value} of type {type(value)} -- "
+                    f"Original error: \n{e}\n")
         return value
 
     def _get_python_type(self,
