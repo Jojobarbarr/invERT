@@ -1,7 +1,7 @@
 {
   "experiment": {
     "experiment_name": {
-      "value": "test",
+      "value": "lr_0-001",
       "type": "string",
     },
     "output_folder": {
@@ -9,13 +9,13 @@
       "type": "Path",
     },
     "repetitions": {
-      "value": 1,
+      "value": 5,
       "type": "int",
     },
   },
   "training": {
     "epochs": {
-      "value": 1,
+      "value": 3,
       "type": "int",
     },
     "initial_learning_rate": {
@@ -63,11 +63,11 @@
   },
   "dataset": {
     "num_samples": {
-      "value": 16384,
+      "value": 131072,
       "type": "int",
     },
     "num_sub_group": {
-      "value": 16,
+      "value": 4,
       "type": "int",
     },
     "dataset_name": {
@@ -99,7 +99,7 @@
       "type": "int",
     },
     "batch_mixture": {
-      "value": 16,
+      "value": 4,
       "type": "int",
     },
   },
@@ -109,7 +109,7 @@
         "value": 2,
         "type": "int",
       },
-      "hidden_dims": [64, 256],
+      "hidden_dims": [16, 256],
     },
     "cnn": {
       "conv_layers": [
@@ -135,7 +135,7 @@
         },
         {
           "in_channels": {
-            "value": 64,
+            "value": 32,
             "type": "int",
           },
           "kernel_shape": {
