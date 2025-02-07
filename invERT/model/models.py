@@ -94,15 +94,10 @@ class DynamicConv2D(nn.Module):
 class DynamicConvNet(nn.Module):
     def __init__(self,
                  in_channels: list[int],
-                 out_channels: list[int],
-                 kernel_shapes: list[int]
                  ) -> None:
         super(DynamicConvNet, self).__init__()
 
         self.num_layers = len(in_channels)
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_shapes = kernel_shapes
 
         self.dynamic_conv_layers = nn.ModuleList([
             DynamicConv2D() for _ in range(self.num_layers)
@@ -143,8 +138,6 @@ class DynamicModel(nn.Module):
 
         self.conv_net = DynamicConvNet(
             self.in_channels,
-            self.out_channels,
-            kernel_shapes
         )
 
     def forward(self,

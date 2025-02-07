@@ -1,5 +1,6 @@
 import unittest
-from invERT.model.models import KernelGeneratorMLP, DynamicConv2D
+from invERT.model.models import KernelGeneratorMLP, DynamicConv2D, \
+    DynamicConvNet, DynamicModel
 import torch
 
 
@@ -75,8 +76,47 @@ class TestDynamicConv2D(unittest.TestCase):
         input_tensor: torch.Tensor = torch.randn(4, 32, 256, 256)
         output_tensor: torch.Tensor = DC2D_model(
             input_tensor, kernels, batch_size)
-        print(output_tensor.shape)
         self.assertEqual(output_tensor.shape[0], 4)
         self.assertEqual(output_tensor.shape[1], 64)
+        self.assertEqual(output_tensor.shape[2], 256)
+        self.assertEqual(output_tensor.shape[3], 256)
+
+class TestDynamicConvNet(unittest.TestCase):
+    def test_forward(self):
+        in_channels: list[int] = [32, 64]
+        DCmodel: DynamicConvNet = DynamicConvNet(in_channels)
+
+        input_tensor: torch.Tensor = torch.randn(4, 32, 256, 256)
+        kernels = [torch.randn(64, 8, 3, 3), torch.randn(64, 16, 3, 3)]
+        batch_size: int = 4
+        output_tensor: torch.Tensor = DCmodel(
+            input_tensor, kernels, batch_size)
+        self.assertEqual(output_tensor.shape[0], 4)
+        self.assertEqual(output_tensor.shape[1], 64)
+        self.assertEqual(output_tensor.shape[2], 256)
+        self.assertEqual(output_tensor.shape[3], 256)
+
+class TestDynamicModel(unittest.TestCase):
+    def test_forward(self):
+        input_metadata_dim: int = 8
+        hidden_dims: list[int] = [16, 64]
+        in_channels: list[int] = [32, 64]
+        out_channel: int = 2
+        kernel_shapes: list[int] = [3, 5]
+        DM_model: DynamicModel = DynamicModel(
+            input_metadata_dim,
+            hidden_dims,
+            in_channels,
+            out_channel,
+            kernel_shapes
+        )
+        # input_tensor is of size
+        # (batch_size, in_channels, input_dim, input_dim)
+        input_tensor: torch.Tensor = torch.randn(4, 32, 256, 256)
+        # input_metadata is of size (batch_size, input_metadata_dim)
+        input_metadata: torch.Tensor = torch.randn(4, 8)
+        output_tensor: torch.Tensor = DM_model(input_metadata, input_tensor)
+        self.assertEqual(output_tensor.shape[0], 4)
+        self.assertEqual(output_tensor.shape[1], 2)
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
