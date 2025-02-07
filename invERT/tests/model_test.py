@@ -21,12 +21,13 @@ class TestKernelGeneratorMLP(unittest.TestCase):
         nbr_weights_conv_layers: list[int] = [1 * 16 * 3 * 3, 32 * 2 * 5 * 5]
         self.assertListEqual(KG_model.nbr_weights_conv_layers,
                              nbr_weights_conv_layers)
-        self.assertEqual(KG_model.layers[0].in_features, 8)
-        self.assertEqual(KG_model.layers[0].out_features, 16)
-        self.assertEqual(KG_model.layers[1].in_features, 16)
-        self.assertEqual(KG_model.layers[1].out_features, 64)
-        self.assertEqual(KG_model.layers[2].in_features, 64)
-        self.assertEqual(KG_model.layers[2].out_features,
+        # One layer out of two is a ReLU layer
+        self.assertEqual(KG_model.mlp[0].in_features, 8)
+        self.assertEqual(KG_model.mlp[0].out_features, 16)
+        self.assertEqual(KG_model.mlp[2].in_features, 16)
+        self.assertEqual(KG_model.mlp[2].out_features, 64)
+        self.assertEqual(KG_model.mlp[4].in_features, 64)
+        self.assertEqual(KG_model.mlp[4].out_features,
                          sum(nbr_weights_conv_layers))
 
     def test_forward(self):
@@ -81,6 +82,7 @@ class TestDynamicConv2D(unittest.TestCase):
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
 
+
 class TestDynamicConvNet(unittest.TestCase):
     def test_forward(self):
         in_channels: list[int] = [32, 64]
@@ -95,6 +97,7 @@ class TestDynamicConvNet(unittest.TestCase):
         self.assertEqual(output_tensor.shape[1], 64)
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
+
 
 class TestDynamicModel(unittest.TestCase):
     def test_forward(self):
