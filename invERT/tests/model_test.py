@@ -81,6 +81,7 @@ class TestDynamicConv2D(unittest.TestCase):
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
 
+
 class TestDynamicConvNet(unittest.TestCase):
     def test_forward(self):
         in_channels: list[int] = [32, 64]
@@ -95,6 +96,7 @@ class TestDynamicConvNet(unittest.TestCase):
         self.assertEqual(output_tensor.shape[1], 64)
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
+
 
 class TestDynamicModel(unittest.TestCase):
     def test_forward(self):
