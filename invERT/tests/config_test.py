@@ -65,33 +65,33 @@ class TestConfig(unittest.TestCase):
 
     def test_update(self):
         config = Config(CONFIG_DICT)
-        
+
         overriden_dict: dict[str, str] = {
             'experiment.experiment_name': 'new_name',
             'experiment.output_folder': 'other_output',
             'experiment.log': 'true',
             'model.cnn.conv_layers[1].kernel_shape': '5',
             'model.mlp.hidden_dims': '[2, 6]',
-            }
-        
+        }
+
         config.update(overriden_dict)
         self.assertEqual(config.experiment.experiment_name, "new_name")
         self.assertEqual(config.experiment.output_folder, Path("other_output"))
         self.assertTrue(config.experiment.log)
         self.assertEqual(config.model.cnn.conv_layers[1].kernel_shape, 5)
         # self.assertListEqual(config.model.mlp.hidden_dims, [2, 6])
-    
+
     def test_to_dict(self):
         config = Config(CONFIG_DICT)
         to_dict_config = config.to_dict(config)
-        self.assertEqual(to_dict_config["experiment"]["experiment_name"], 
+        self.assertEqual(to_dict_config["experiment"]["experiment_name"],
                          "test")
         self.assertEqual(to_dict_config["experiment"]["log"], False)
         self.assertEqual(to_dict_config["model"]["cnn"]["conv_layers"][1][
             "in_channels"], 32)
-        self.assertEqual(to_dict_config["model"]["mlp"]["hidden_dims"], 
+        self.assertEqual(to_dict_config["model"]["mlp"]["hidden_dims"],
                          [64, 256])
-    
+
     def test__get_name(self):
         config = Config(CONFIG_DICT)
         current_datetime = datetime.now().strftime("%d-%m-%Y_%Hh%M")

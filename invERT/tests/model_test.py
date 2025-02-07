@@ -25,9 +25,9 @@ class TestKernelGeneratorMLP(unittest.TestCase):
         self.assertEqual(KG_model.layers[1].in_features, 16)
         self.assertEqual(KG_model.layers[1].out_features, 64)
         self.assertEqual(KG_model.layers[2].in_features, 64)
-        self.assertEqual(KG_model.layers[2].out_features, 
+        self.assertEqual(KG_model.layers[2].out_features,
                          sum(nbr_weights_conv_layers))
-        
+
     def test_forward(self):
         input_metadata_dim: int = 8
         hidden_dims: list[int] = [16, 64]
@@ -56,6 +56,7 @@ class TestKernelGeneratorMLP(unittest.TestCase):
         self.assertEqual(output_tensor[1].shape[2], 5)
         self.assertEqual(output_tensor[1].shape[3], 5)
 
+
 class TestDynamicConv2D(unittest.TestCase):
     def test_forward(self):
         stride: int = 1
@@ -69,7 +70,7 @@ class TestDynamicConv2D(unittest.TestCase):
         # (out_channels, in_channels // batch_size, kernel_shape, kernel_shape)
         kernels = torch.randn(64, 8, 3, 3)
         batch_size: int = 4
-        # input_tensor is of size 
+        # input_tensor is of size
         # (batch_size, in_channels, input_dim, input_dim)
         input_tensor: torch.Tensor = torch.randn(4, 32, 256, 256)
         output_tensor: torch.Tensor = DC2D_model(
@@ -79,4 +80,3 @@ class TestDynamicConv2D(unittest.TestCase):
         self.assertEqual(output_tensor.shape[1], 64)
         self.assertEqual(output_tensor.shape[2], 256)
         self.assertEqual(output_tensor.shape[3], 256)
-
