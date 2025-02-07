@@ -21,7 +21,8 @@ class TestConfig(unittest.TestCase):
 
     def test__get_typed_value(self):
         config: Config = Config(CONFIG_DICT)
-        value_value: str = CONFIG_DICT['experiment']['experiment_name']['value']
+        value_value: str = CONFIG_DICT['experiment']['experiment_name'][
+            'value']
         value_type: str = CONFIG_DICT['experiment']['experiment_name']['type']
         key: str = CONFIG_DICT['experiment']['experiment_name']
         self.assertEqual(

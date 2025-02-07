@@ -45,7 +45,7 @@ class KernelGeneratorMLP(nn.Module):
 
         @param x: The input tensor of shape (batch_size, input_dim)
         @return: A list of tensors (one for each convolutionnal layer) of
-        shape (batch_size, nbr_in_channels, nbr_out_channels,
+        shape (batch_size * out_channels, nbr_in_channels,
         kernel_size, kernel_size)
         """
         batch_size: int = x.shape[0]
@@ -69,16 +69,10 @@ class KernelGeneratorMLP(nn.Module):
 
 class DynamicConv2D(nn.Module):
     def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 kernel_shape: int,
                  stride: int = 1,
                  padding: str = "same"
                  ) -> None:
         super(DynamicConv2D, self).__init__()
-        self.in_channels: int = in_channels
-        self.out_channels: int = out_channels
-        self.kernel_shape: int = kernel_shape
         self.stride: int = stride
         self.padding: str = padding
 
@@ -111,11 +105,7 @@ class DynamicConvNet(nn.Module):
         self.kernel_shapes = kernel_shapes
 
         self.dynamic_conv_layers = nn.ModuleList([
-            DynamicConv2D(
-                self.in_channels[i],
-                self.out_channels[i],
-                kernel_shapes[i]
-            ) for i in range(self.num_layers)
+            DynamicConv2D() for _ in range(self.num_layers)
         ])
 
     def forward(self,
