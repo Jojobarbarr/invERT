@@ -48,7 +48,6 @@ class Config:
             # Set the attribute of the Config object
             setattr(self, key, value)
 
-
     def _get_typed_value(self,
                          value: str,
                          expected_type: str,
@@ -119,6 +118,8 @@ class Config:
         type str.
 
         @return: None
+
+        TODO: Add support for updating lists and dictionaries in the Config
         """
         for key, value in updates.items():
             # key is a string with the format "key1.key2.key3"
@@ -189,15 +190,12 @@ class Config:
         @return: The name of the experiment.
         """
         # Get the current date and time
-        current_datetime = datetime.now()
-
-        # Format the date and time
-        formatted_datetime: str = current_datetime.strftime("%d-%m-%Y_%Hh%M")
+        current_datetime = datetime.now().strftime("%d-%m-%Y_%Hh%M")
 
         # The path of the save folder is the output folder of the experiment
         # with the name of the experiment and the date and time of execution
         save_folder: Path = self.experiment.output_folder / \
-            f"{self.experiment.experiment_name}_{formatted_datetime}"
+            f"{self.experiment.experiment_name}_{current_datetime}"
         return save_folder
 
     def _create_save_folder(self,
