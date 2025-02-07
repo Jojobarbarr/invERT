@@ -12,9 +12,9 @@ class KernelGeneratorMLP(nn.Module):
                  kernel_shapes: list[int]
                  ) -> None:
         """
-        Generates the kernels (flattened weights) for a sequence of 
+        Generates the kernels (flattened weights) for a sequence of
         convolutional layers.
-        The final MLP outputs a vector that is sliced and reshaped into 
+        The final MLP outputs a vector that is sliced and reshaped into
         individual kernels.
         """
         super().__init__()
@@ -92,7 +92,7 @@ class DynamicConv2D(nn.Module):
                 kernels: torch.Tensor,
                 batch_size: int,
                 ) -> torch.Tensor:
-        # Use group convolution so that each image in the batch uses its own 
+        # Use group convolution so that each image in the batch uses its own
         # kernel.
         x = F.conv2d(x,
                      kernels,
@@ -137,10 +137,10 @@ class DynamicModel(nn.Module):
                  ) -> None:
         """
         The complete dynamic model consists of:
-          - A kernel generator network (an MLP) that produces convolutional 
+          - A kernel generator network (an MLP) that produces convolutional
           kernels from metadata.
           - A fully convolutional network that uses these kernels.
-          
+
         in_channels: List of input channels for each convolutional layer.
         out_channels: The number of output channels of the final layer.
         The effective conv channels (per layer) are set to:
@@ -150,7 +150,7 @@ class DynamicModel(nn.Module):
 
         self.in_channels: list[int] = in_channels
         # Construct a list of output channels for each conv layer.
-        # For a single-layer conv net, the only layer maps 
+        # For a single-layer conv net, the only layer maps
         # in_channels[0] -> out_channels.
         if len(in_channels) > 1:
             self.conv_out_channels: list[int] = \
@@ -179,7 +179,7 @@ class DynamicModel(nn.Module):
         kernels = self.kernel_generator(x_metadata)
         batch_size: int = x.shape[0]
         num_channels: int = x.shape[1]
-        # Reshape x so that group convolution can assign each batch element 
+        # Reshape x so that group convolution can assign each batch element
         # its own kernel.
         x = x.view(1, batch_size * num_channels, x.shape[2], x.shape[3])
         x = self.conv_net(x, kernels, batch_size)
