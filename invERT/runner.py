@@ -32,13 +32,16 @@ def init_data(config: Config):
         data_max_size: int = dataset_config.data_max_size
         noise: float = dataset_config.noise
 
-        num_samples = int(num_samples * (1 + dataset_config.validation_split +
-                                         dataset_config.test_split))
-        data: list[tuple[Tensor, Tensor]] = generate_data(num_samples,
-                                                          num_sub_groups,
-                                                          data_min_size,
-                                                          data_max_size,
-                                                          noise)
+        num_samples = int(num_samples * (1 + dataset_config.test_split))
+        num_val_samples = int(num_samples * dataset_config.validation_split)
+        data, val_data = generate_data(
+            num_samples,
+            num_sub_groups,
+            data_min_size,
+            data_max_size,
+            noise,
+            num_val_samples
+        )
     else:
         # The dataset is loaded
         raise NotImplementedError("Loading a dataset is not implemented yet.")
@@ -46,9 +49,12 @@ def init_data(config: Config):
     max_input_shape: int = config.dataset.data_max_size
     data, target, min_data, max_data, min_target, max_target = \
         pre_process_data(data)
+    val_data, val_target, _, _, _, _ = pre_process_data(val_data)
 
     return (data,
+            val_data,
             target,
+            val_target,
             max_input_shape,
             min_data,
             max_data,
@@ -58,7 +64,9 @@ def init_data(config: Config):
 
 def init_dataloaders(config: Config,
                      data: list[Tensor],
-                     target: list[Tensor]
+                     val_data: list[Tensor],
+                     target: list[Tensor],
+                     val_target: list[Tensor],
                      ) -> tuple[list[DataLoader]]:
     dataset_config: Config = config.dataset
     batch_size: int = dataset_config.batch_size
@@ -66,18 +74,18 @@ def init_dataloaders(config: Config,
     num_sub_group: int = dataset_config.num_sub_group
     sub_group_size: int = dataset_config.num_samples // num_sub_group
     test_split: float = dataset_config.test_split
-    validation_split: float = dataset_config.validation_split
 
     train_dataloaders, test_dataloaders, val_dataloaders = \
         initialize_datasets(
             data,
+            val_data,
             target,
+            val_target,
             batch_size,
             batch_mixture,
             num_sub_group,
             sub_group_size,
             test_split,
-            validation_split,
         )
 
     return train_dataloaders, test_dataloaders, val_dataloaders
@@ -217,12 +225,12 @@ def main(config: Config):
     print(f"Using device: {device}")
 
     # Initialize data
-    data, target, input_max_shape, min_data, max_data, min_target, \
-        max_target = init_data(config)
+    data, val_data, target, val_target, input_max_shape, min_data, max_data, \
+        min_target, max_target = init_data(config)
 
     # Initialize dataloaders
     train_dataloaders, test_dataloaders, val_dataloaders = \
-        init_dataloaders(config, data, target)
+        init_dataloaders(config, data, val_data, target, val_target)
 
     # Training initalization
     training_config: Config = config.training

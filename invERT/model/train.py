@@ -242,7 +242,7 @@ def print_model_results(model_list: list[DynamicModel],
     model = model_list[0]
     with no_grad():
         model.eval()
-        for val_dataloader in val_dataloaders:
+        for val_dataloader_idx, val_dataloader in enumerate(val_dataloaders):
             val_inputs, val_targets = next(iter(val_dataloader))
 
             mini_batch_size: int = val_inputs.shape[0]
@@ -261,47 +261,53 @@ def print_model_results(model_list: list[DynamicModel],
                 val_input_metadata,
                 val_inputs)
 
-        # Denormalize the data
-        val_targets: np.ndarray[float, float] = denormalize(
-            val_targets,
-            min_target, max_target)[0, 0].detach().cpu().numpy()
-        val_outputs: np.ndarray[float, float] = denormalize(
-            val_outputs,
-            min_target, max_target)[0, 0].detach().cpu().numpy()
+            # Denormalize the data
+            val_targets: np.ndarray[float, float] = denormalize(
+                val_targets,
+                min_target, max_target)[0, 0].detach().cpu().numpy()
+            val_outputs: np.ndarray[float, float] = denormalize(
+                val_outputs,
+                min_target, max_target)[0, 0].detach().cpu().numpy()
 
-        error_map = np.abs(val_targets - val_outputs) / val_targets
+            error_map = np.abs(val_targets - val_outputs) / val_targets
 
-        # Create subplots: 1 row, 3 columns
-        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            # Create subplots: 1 row, 3 columns
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-        # Normalize target and output for consistent scaling
-        vmin, vmax = min(
-            val_targets.min(), val_outputs.min()), max(
-            val_targets.max(), val_outputs.max())
+            # Normalize target and output for consistent scaling
+            vmin, vmax = min(
+                val_targets.min(), val_outputs.min()), max(
+                val_targets.max(), val_outputs.max())
 
-        # Plot the target image
-        im0 = axes[0].imshow(val_targets, cmap='gray', vmin=vmin, vmax=vmax)
-        axes[0].set_title("Target")
-        axes[0].axis('on')
-        cbar0 = fig.colorbar(im0, ax=axes[0], orientation='vertical')
-        cbar0.set_label('Value')
+            # Plot the target image
+            im0 = axes[0].imshow(val_targets,
+                                 cmap='gray',
+                                 vmin=vmin,
+                                 vmax=vmax)
+            axes[0].set_title("Target")
+            axes[0].axis('on')
+            cbar0 = fig.colorbar(im0, ax=axes[0], orientation='vertical')
+            cbar0.set_label('Value')
 
-        # Plot the output image
-        im1 = axes[1].imshow(val_outputs, cmap='gray', vmin=vmin, vmax=vmax)
-        axes[1].set_title("Output")
-        axes[1].axis('on')
-        cbar1 = fig.colorbar(im1, ax=axes[1], orientation='vertical')
-        cbar1.set_label('Value')
+            # Plot the output image
+            im1 = axes[1].imshow(val_outputs,
+                                 cmap='gray',
+                                 vmin=vmin,
+                                 vmax=vmax)
+            axes[1].set_title("Output")
+            axes[1].axis('on')
+            cbar1 = fig.colorbar(im1, ax=axes[1], orientation='vertical')
+            cbar1.set_label('Value')
 
-        # Plot the error map
-        im2 = axes[2].imshow(error_map, cmap='hot')
-        axes[2].set_title("Error Map")
-        axes[2].axis('on')
-        cbar2 = fig.colorbar(im2, ax=axes[2], orientation='vertical')
-        cbar2.set_label('Relative Error')
+            # Plot the error map
+            im2 = axes[2].imshow(error_map, cmap='hot')
+            axes[2].set_title("Error Map")
+            axes[2].axis('on')
+            cbar2 = fig.colorbar(im2, ax=axes[2], orientation='vertical')
+            cbar2.set_label('Relative Error')
 
-        # Adjust layout to fit everything neatly
-        plt.tight_layout()
+            # Adjust layout to fit everything neatly
+            plt.tight_layout()
 
-        plt.savefig(output_folder / "results.png")
-        # plt.show()
+            plt.savefig(output_folder / f"results_{val_dataloader_idx}.png")
+            # plt.show()

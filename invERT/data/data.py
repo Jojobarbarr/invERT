@@ -98,13 +98,14 @@ class IrregularDataset(Dataset):
 
 
 def initialize_datasets(data: list[Tensor],
+                        val_data: list[Tensor],
                         target: list[Tensor],
+                        val_target: list[Tensor],
                         batch_size: int,
                         batch_mixture: int,
                         num_sub_group: int,
                         sub_group_size: int,
                         test_split: float,
-                        validation_split: float,
                         ) -> tuple[
                             tuple[DataLoader],
                             tuple[DataLoader],
@@ -112,12 +113,13 @@ def initialize_datasets(data: list[Tensor],
 ]:
     logging.info("Initializing dataset, dataloader and models...")
     dataset = IrregularDataset(data, target)
+    val_dataset = IrregularDataset(val_data, val_target)
 
     mini_batch_size: int = batch_size // batch_mixture
     sub_groups_size: int = dataset.len_sub_group()
+    val_sub_groups_size: int = val_dataset.len_sub_group()
     train_size: int = sub_group_size
     test_size: int = int(test_split * train_size)
-    val_size: int = sub_groups_size - train_size - test_size
 
     train_dataloaders: list[DataLoader] = []
     test_dataloaders: list[DataLoader] = []
@@ -125,9 +127,11 @@ def initialize_datasets(data: list[Tensor],
 
     for group_idx in range(num_sub_group):
         start_idx = group_idx * sub_groups_size
+        val_start_idx = group_idx * val_sub_groups_size
         end_idx = (group_idx + 1) * sub_groups_size
-        train_dataset, test_dataset, val_dataset = random_split(
-            dataset[start_idx:end_idx], [train_size, test_size, val_size])
+        val_end_idx = (group_idx + 1) * val_sub_groups_size
+        train_dataset, test_dataset = random_split(
+            dataset[start_idx:end_idx], [train_size, test_size])
 
         train_dataloader = DataLoader(
             train_dataset,
@@ -139,7 +143,7 @@ def initialize_datasets(data: list[Tensor],
             batch_size=mini_batch_size,
             shuffle=True,)
         val_dataloader = DataLoader(
-            val_dataset,
+            val_dataset[val_start_idx:val_end_idx],
             batch_size=mini_batch_size,
             shuffle=True,)
 
@@ -207,7 +211,9 @@ def generate_data(num_samples: int,
                   data_min_size: int,
                   data_max_size: int,
                   noise: float,
-                  ) -> list[tuple[Tensor, Tensor]]:
+                  num_val_samples: int,
+                  ) -> tuple[list[tuple[Tensor, Tensor]],
+                             list[tuple[Tensor, Tensor]]]:
     """
     Generate a dataset composed of sub-groups of different data shapes.
 
@@ -219,14 +225,16 @@ def generate_data(num_samples: int,
     @param data_min_size: Minimum size of the data.
     @param data_max_size: Maximum size of the data.
     @param noise: Noise level to apply to the target function.
-    @return: The generated dataset, a list of tuples (data, target). The list
-    has a length of num_sub_groups.
+    @param num_val_samples: Number of samples to use for validation.
+    @return: The generated dataset, a list of tuples (data, target) and a list
+    of tuples (val_data, val_target). The list has a length of num_sub_groups.
     """
     logging.info(
         f"Generating data with shapes between "
         f"{data_min_size} and {data_max_size}...")
 
     data: list[tuple[Tensor, Tensor]] = []
+    val_data: list[tuple[Tensor, Tensor]] = []
 
     # The dataset is composed of sub-groups of different data shapes, but each
     # sample in a sub-group has the same shape.
@@ -234,23 +242,32 @@ def generate_data(num_samples: int,
     for _ in range(num_sub_groups):
         # Generate a sub-dataset with a uniform random shape
         width: int = randint(data_min_size, data_max_size, (1,)).item()
+        width_val: int = randint(data_min_size, data_max_size, (1,)).item()
         height: int = randint(data_min_size, data_max_size, (1,)).item()
+        height_val: int = randint(data_min_size, data_max_size, (1,)).item()
         data_shape: tuple[int, int, int, int] = (sub_group_sample_size,
                                                  1,  # Number of channels
                                                  width,
                                                  height)
+        val_data_shape: tuple[int, int, int, int] = (num_val_samples,
+                                                     1,  # Number of channels
+                                                     width_val,
+                                                     height_val)
 
         # Generate a tensor with shape data_shape, with random values between
         # 500 and 1500
         target_chunk: Tensor = 1000 * rand(data_shape) + 500
+        val_target_chunk: Tensor = 1000 * rand(val_data_shape) + 500
 
         # Generate the target tensor by applying the target function to the
         # data tensor
         data_chunk: Tensor = target_func(target_chunk, noise)
+        val_data_chunk: Tensor = target_func(val_target_chunk, noise)
 
         data.append((data_chunk, target_chunk))
+        val_data.append((val_data_chunk, val_target_chunk))
 
-    return data
+    return data, val_data
 
 
 def pre_process_data(data: list[tuple[Tensor, Tensor]],

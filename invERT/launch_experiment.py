@@ -108,6 +108,7 @@ def load_config(config_file: Path
 
 def override_config(overriden_arguments: list[str],
                     ) -> dict[str, str]:
+    overriden_dict: dict[str, str] = {}
     for overriden_idx, overriden_argument in enumerate(overriden_arguments):
         overriden_argument_split: list[str] = overriden_argument.split('=')
 
@@ -116,9 +117,8 @@ def override_config(overriden_arguments: list[str],
              f"of 'key=value'. Here, you provided: '{overriden_argument}' at "
              f"index {overriden_idx} of the override list.")
 
-        overriden_dict: dict[str, str] = {
-            overriden_argument_split[0]: overriden_argument_split[1]
-        }
+        overriden_dict[overriden_argument_split[0]] = \
+            overriden_argument_split[1]
     return overriden_dict
 
 
