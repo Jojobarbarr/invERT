@@ -184,6 +184,7 @@ def denormalize(
     x = x / lim
     return x * (max_val - min_val) / lim + min_val
 
+
 def target_func(x: Tensor,
                 noise: float
                 ) -> Tensor:
