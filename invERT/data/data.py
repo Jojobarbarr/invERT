@@ -1,5 +1,6 @@
 import logging
-from torch import cat, randn, randint, sin, rand, Tensor, flip
+from torch import cat, randint, rand, Tensor, flip, sin, cos
+from torch.functional import F
 from torch.utils.data import Dataset, DataLoader, random_split
 
 # Configure logging
@@ -183,27 +184,17 @@ def denormalize(
     x = x / lim
     return x * (max_val - min_val) / lim + min_val
 
-
 def target_func(x: Tensor,
                 noise: float
                 ) -> Tensor:
-    """
-    Target function to apply to the data tensor.
+    # 1. Flip the image.
+    x = flip(x, dims=(2, 3))
 
-    The target function acts on the values but also on the metadata, here the
-    shape of the tensor. Moreover, the tensor is flipped along the two last
-    dimensions to challenge the convolutionnal net to propagate the
-    information. x is of shape (num_samples_per_sub_group, 1, width, height).
-    The target function has a random component to add noise to the target.
-
-    @param x: The data tensor.
-    @param noise: Noise level to apply to the target function.
-    """
-    x_flip: Tensor = flip(x, dims=(2, 3))
-    x_width: int = x.shape[2]
-    x_height: int = x.shape[3]
-    return (sin(x * (x_flip + x_width)) + x * x_height) \
-        * (1 + noise * randn(x.shape))
+    # 2. Non injective transformation, metadata dependant.
+    x_width = x.shape[2]
+    x_height = x.shape[3]
+    x = sin(x ** 2) % x_width + cos(x * 3) % x_height
+    return x
 
 
 def generate_data(num_samples: int,

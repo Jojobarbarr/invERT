@@ -1,0 +1,349 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html><head>
+<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="edit_on_doubleclick" content="/">
+<meta name="robots" content="noindex,nofollow">
+
+<title>BasileGandon/DeepLearningERTInversion - RING IntraWiki</title>
+<script type="text/javascript" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/common.js"></script>
+
+<script type="text/javascript">
+<!--
+var search_hint = "Rechercher";
+//-->
+</script>
+
+<script type="text/javascript">
+<!-- // GUI edit link and i18n
+var gui_editor_link_href = "/BasileGandon/DeepLearningERTInversion?action=edit&editor=gui";
+var gui_editor_link_text = "Éditer (mode graphique)";
+//-->
+</script>
+
+<link rel="stylesheet" type="text/css" charset="utf-8" media="all" href="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/common.css">
+<link rel="stylesheet" type="text/css" charset="utf-8" media="screen" href="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/screen.css">
+<link rel="stylesheet" type="text/css" charset="utf-8" media="print" href="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/print.css">
+<link rel="stylesheet" type="text/css" charset="utf-8" media="projection" href="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/projection.css">
+
+<!-- css only for MS IE6/IE7 browsers -->
+<!--[if lt IE 8]>
+   <link rel="stylesheet" type="text/css" charset="utf-8" media="all" href="/moin_static199/rightsidebar/css/msie.css">
+<![endif]-->
+
+
+<link rel="alternate" title="RING IntraWiki: BasileGandon/DeepLearningERTInversion" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?diffs=1&amp;show_att=1&amp;action=rss_rc&amp;unique=0&amp;page=BasileGandon%2FDeepLearningERTInversion&amp;ddiffs=1" type="application/rss+xml">
+<link rel="alternate" type="application/wiki" title="Éditer" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=edit">
+
+<link rel="Start" href="https://wiki.ring-team.org/PortailRING">
+<link rel="Alternate" title="Balisage Wiki" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=raw">
+<link rel="Alternate" media="print" title="Version à imprimer" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=print">
+<link rel="Up" href="https://wiki.ring-team.org/BasileGandon">
+<link rel="Appendix" title="CNN.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=CNN.png">
+<link rel="Appendix" title="DFN_invERT.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=DFN_invERT.png">
+<link rel="Appendix" title="FCNN_invERT.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=FCNN_invERT.png">
+<link rel="Appendix" title="FCNN_invERT_multi_layer.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=FCNN_invERT_multi_layer.png">
+<link rel="Appendix" title="couple.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=couple.png">
+<link rel="Appendix" title="couple2.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=couple2.png">
+<link rel="Appendix" title="couple_dys.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=couple_dys.png">
+<link rel="Appendix" title="couple_dys2.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=couple_dys2.png">
+<link rel="Appendix" title="input.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=input.png">
+<link rel="Appendix" title="rapport_bibliographique.pdf" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=rapport_bibliographique.pdf">
+<link rel="Appendix" title="target.png" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=target.png">
+<link rel="Search" href="https://wiki.ring-team.org/FindPage">
+<link rel="Index" href="https://wiki.ring-team.org/TitleIndex">
+<link rel="Glossary" href="https://wiki.ring-team.org/WordIndex">
+<link rel="Help" href="https://wiki.ring-team.org/HelpOnFormatting">
+</head>
+
+<body lang="fr" dir="ltr">
+
+<div id="header">
+
+<form id="searchform" method="get" action="/BasileGandon/DeepLearningERTInversion">
+<div>
+<input type="hidden" name="action" value="fullsearch">
+<input type="hidden" name="context" value="180">
+<label for="searchinput" style="display: none;">Rechercher :</label>
+<input id="searchinput" type="text" name="value" value="Rechercher" size="20" onfocus="searchFocus(this)" onblur="searchBlur(this)" onkeyup="searchChange(this)" onchange="searchChange(this)" alt="Search" class="disabled">
+<input id="titlesearch" name="titlesearch" type="submit" value="Titres" alt="Search Titles" disabled="disabled">
+<input id="fullsearch" name="fullsearch" type="submit" value="Texte" alt="Search Full Text" disabled="disabled">
+</div>
+</form>
+<script type="text/javascript">
+<!--// Initialize search form
+var f = document.getElementById('searchform');
+f.getElementsByTagName('label')[0].style.display = 'none';
+var e = document.getElementById('searchinput');
+searchChange(e);
+searchBlur(e);
+//-->
+</script>
+
+<div id="logo"><a href="https://wiki.ring-team.org/PortailRING"><img src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/ringlogo.png" alt="RING Logo"></a></div>
+<div id="locationline">
+<div id="interwiki"><span><a href="https://wiki.ring-team.org/PortailRING" rel="nofollow">RINGWiki</a></span></div>
+
+<ul id="pagelocation">
+<li><a href="https://wiki.ring-team.org/BasileGandon">BasileGandon</a></li><li><a class="backlink" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=fullsearch&amp;context=180&amp;value=linkto%3A%22BasileGandon%2FDeepLearningERTInversion%22" rel="nofollow" title="Cliquez ici pour faire une recherche de ce titre dans les pages">DeepLearningERTInversion</a></li>
+</ul>
+
+</div>
+
+<ul id="pagetrail">
+<li><a href="https://wiki.ring-team.org/MasterZone">MasterZone</a></li><li><a href="https://wiki.ring-team.org/PortailRING">PortailRING</a></li><li><a href="https://wiki.ring-team.org/ModelingWithPynoddy">ModelingWithPynoddy</a></li><li><a href="https://wiki.ring-team.org/BasileGandon">BasileGandon</a></li><li><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion">DeepLearningERTInversion</a></li>
+</ul>
+</div>
+
+<div id="sidebar">
+<div class="sidepanel">
+<h1>Wiki</h1>
+
+<ul id="navibar">
+<li class="wikilink"><a href="https://wiki.ring-team.org/PortailRING">PortailRING</a></li><li class="wikilink"><a href="https://wiki.ring-team.org/RecentChanges">RecentChanges</a></li><li class="wikilink"><a href="https://wiki.ring-team.org/FindPage">FindPage</a></li><li class="wikilink"><a href="https://wiki.ring-team.org/HelpContents">HelpContents</a></li><li class="current"><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion">DeepLearningERTInversion</a></li>
+</ul>
+
+</div>
+<div class="sidepanel">
+<h1>Page</h1>
+<ul class="editbar"><li><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=edit&amp;editor=text" name="texteditlink" rel="nofollow">Éditer (mode texte)</a></li><li><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=edit&amp;editor=gui">Éditer (mode graphique)</a></li><li class="toggleCommentsButton" style="display:none;"><a href="#" class="nbcomment" onclick="toggleComments();return false;">Commentaires</a></li><li><a class="nbinfo" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=info" rel="nofollow">Informations</a></li><li><a class="nbsubscribe" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=subscribe" rel="nofollow">S'abonner</a></li><li><a class="nbquicklink" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=quicklink" rel="nofollow">Ajouter un lien</a></li><li><a class="nbattachments" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile" rel="nofollow">Pièces jointes</a></li><li>
+<form class="actionsmenu" method="GET" action="/BasileGandon/DeepLearningERTInversion">
+<div>
+    
+    <select name="action" onchange="if ((this.selectedIndex != 0) &amp;&amp;
+                      (this.options[this.selectedIndex].disabled == false)) {
+                this.form.submit();
+            }
+            this.selectedIndex = 0;">
+        <option value="show" selected="selected">Autres actions :</option><option value="raw">Code source</option>
+<option value="print">Version à imprimer</option>
+<option value="RenderAsDocbook">Afficher en Docbook</option>
+<option value="refresh">Effacer le cache</option>
+<option value="show" disabled="disabled" class="disabled">------------------------</option>
+<option value="SpellCheck">Vérifier l'orthographe</option>
+<option value="LikePages">Pages similaires</option>
+<option value="LocalSiteMap">Carte locale du site</option>
+<option value="show" disabled="disabled" class="disabled">------------------------</option>
+<option value="RenamePage">Renommer la page</option>
+<option value="DeletePage">Supprimer la page</option>
+<option value="show" disabled="disabled" class="disabled">------------------------</option>
+<option value="SubscribeUser">Abonner un utilisateur</option>
+<option value="show" disabled="disabled" class="disabled">------------------------</option>
+<option value="show" disabled="disabled" class="disabled">Dépolluer</option>
+<option value="revert">Retour à cette version</option>
+<option value="PackagePages">Pages des paquets</option>
+<option value="SyncPages">Synchroniser les pages</option>
+<option value="show" disabled="disabled" class="disabled">------------------------</option>
+<option value="Load">Charger</option>
+<option value="PageActions">PageActions</option>
+<option value="Save">Enregistrer</option>
+<option value="SlideShow">SlideShow</option>
+    </select>
+    
+    
+</div>
+<script type="text/javascript">
+<!--// Init menu
+actionsMenuInit('Autres actions :');
+//-->
+</script>
+</form>
+</li></ul>
+
+</div>
+<div class="sidepanel">
+<h1>Utilisateur</h1>
+<ul id="username"><li><a href="https://wiki.ring-team.org/BasileGandon" id="userhome" title="BasileGandon @ Self">BasileGandon</a></li><li><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=userprefs" id="userprefs" rel="nofollow">Paramètres</a></li><li><a href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=logout&amp;logout=logout" id="logout" rel="nofollow">Déconnexion</a></li></ul>
+</div>
+</div>
+<div id="message">
+<p></p><div class="info">Merci pour vos modifications. Nous apprécions le soin que vous apportez aux détails.</div><p></p><a class="clear-link" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion">Fermer ce message</a>
+</div>
+
+<div id="page" lang="en" dir="ltr">
+<div dir="ltr" id="content" lang="en"><span class="anchor" id="top"></span>
+<span class="anchor" id="line-1"></span><p class="line867">
+</p><h1 id="Deep_Learning_based_Electrical_Resistivity_Tomography_.28Master_Project.29">Deep Learning based Electrical Resistivity Tomography (Master Project)</h1>
+<span class="anchor" id="line-2"></span><p class="line867"></p><div class="table-of-contents"><p class="table-of-contents-heading">Sommaire</p><ol><li>
+<a href="#Deep_Learning_based_Electrical_Resistivity_Tomography_.28Master_Project.29">Deep Learning based Electrical Resistivity Tomography (Master Project)</a><ol><li>
+<a href="#Information">Information</a></li><li>
+<a href="#Work">Work</a><ol><li>
+<a href="#Preliminary_work">Preliminary work</a></li><li>
+<a href="#Bibliography">Bibliography</a></li><li>
+<a href="#Toy_model">Toy model</a></li><li>
+<a href="#Exploration_of_parameters_space_.28before_02.2F2025.29">Exploration of parameters space (before 02/2025)</a></li><li>
+<a href="#Data_from_Noddyverse">Data from Noddyverse</a></li><li>
+<a href="#TODO">TODO</a></li></ol></li></ol></li></ol></div> <span class="anchor" id="line-3"></span>
+<h2 id="Information">Information</h2>
+<span class="anchor" id="line-4"></span><p class="line867"><strong>Level</strong>: 3A <span class="anchor" id="line-5"></span><span class="anchor" id="line-6"></span></p><p class="line867"><strong>Year</strong>: 2024 - 2025 <span class="anchor" id="line-7"></span><span class="anchor" id="line-8"></span></p><p class="line867"><strong>Author</strong>: <a href="https://wiki.ring-team.org/BasileGandon">Basile Gandon</a> <span class="anchor" id="line-9"></span><span class="anchor" id="line-10"></span></p><p class="line867"><strong>Supervisor</strong>: <a href="https://wiki.ring-team.org/PaulCupillard">Paul Cupillard</a> <span class="anchor" id="line-11"></span><span class="anchor" id="line-12"></span></p><p class="line867"><strong>Goal</strong>: <span class="anchor" id="line-13"></span><span class="anchor" id="line-14"></span></p><p class="line874">EN
+ - Electric Resistivity Tomography (ERT) is a geophysical technique 
+based on solving an ill-posed inverse problem in the Hadamard sense. On 
+one hand, deterministic methods, often used to address these problems, 
+are computationally expensive and prone to local minima. On the other 
+hand, stochastic approaches allow a balance between exploring the 
+solution space and computational cost. Among these approaches, deep 
+learning appears particularly promising for solving inverse problems. 
+Indeed, the universal approximation theorem, demonstrated by Leshno et 
+al. (1993), establishes that well-designed deep neural networks can 
+approximate any continuous function. Moreover, in the context of deep 
+learning, the inversion cost is primarily front-loaded during the 
+generation of training data and model learning, making the inversion 
+itself fast and inexpensive once the network is trained. Although some 
+studies have shown encouraging results compared to traditional methods, 
+these models remain specific to a given measurement configuration. 
+However, measurement conditions in ERT can vary significantly, both in 
+methodology and in study dimensions. Our goal is therefore to develop 
+deep neural networks capable of adapting to a wide range of ERT 
+inversion configurations. <span class="anchor" id="line-15"></span><span class="anchor" id="line-16"></span></p><p class="line874">FR
+ - La Tomographie par Résistivité Électrique (Electric Resistivity 
+Tomography - ERT) est une technique géophysique reposant sur la 
+résolution d'un problème inverse mal posé au sens de Hadamard. D'une 
+part, les méthodes déterministes, souvent employées pour résoudre ces 
+problèmes, présentent un coût computationnel élevé et sont sensibles aux
+ minima locaux. D'autre part, les approches stochastiques permettent de 
+trouver un compromis entre l'exploration de l'espace des solutions et le
+ coût de calcul. Parmi ces approches, l'apprentissage profond apparaît 
+comme particulièrement prometteur pour la résolution de problèmes 
+inverses. En effet, le théorème d'approximation universelle, démontré 
+par Leshno et al. (1993), établit que des réseaux de neurones profonds 
+bien conçus peuvent approximer toute fonction continue. De plus, dans le
+ cadre de l'apprentissage profond, le coût de l'inversion est 
+essentiellement reporté en amont, lors de la génération des données 
+d'entraînement et de l'apprentissage du modèle, rendant l'inversion 
+rapide et peu coûteuse une fois le réseau entraîné. Bien que certaines 
+études aient produit des résultats encourageants par rapport aux 
+méthodes classiques, ces modèles restent spécifiques à une configuration
+ de mesure donnée. Or, les conditions de mesure en ERT peuvent varier 
+considérablement, tant dans la méthodologie que dans les dimensions des 
+études. Notre objectif est donc de développer des réseaux de neurones 
+profonds capables de s'adapter à une large gamme de configurations 
+d'inversion ERT. <span class="anchor" id="line-17"></span><span class="anchor" id="line-18"></span></p><p class="line867"><strong>Key-words</strong>: ERT, Deep Learning, Python, <a class="nonexistent" href="https://wiki.ring-team.org/PyTorch">PyTorch</a> <span class="anchor" id="line-19"></span><span class="anchor" id="line-20"></span></p><p class="line867"><strong>Code Deposit</strong>: <a class="https" href="https://github.com/Jojobarbarr/invERT">invERT GitHub</a> <span class="anchor" id="line-21"></span><span class="anchor" id="line-22"></span></p><p class="line867"><strong>GPU equiped online environnement</strong>: <a class="https" href="https://colab.research.google.com/drive/1C9F-ANfv1z5MeZjp2MjYR31zBAg-OhPG?usp=sharing">invERT on Google Collab</a> <span class="anchor" id="line-23"></span><span class="anchor" id="line-24"></span></p><p class="line867"><strong>Report</strong>: <em>Not yet available</em> <span class="anchor" id="line-25"></span><span class="anchor" id="line-26"></span></p><p class="line867"><strong>PPt</strong>: <em>Not yet available</em> <span class="anchor" id="line-27"></span><span class="anchor" id="line-28"></span></p><p class="line867">
+</p><h2 id="Work">Work</h2>
+<span class="anchor" id="line-29"></span><p class="line867">
+</p><h3 id="Preliminary_work">Preliminary work</h3>
+<span class="anchor" id="line-30"></span><p class="line862">A simple 
+model was developed using a naive geological model and a basic neural 
+network. The implementation runs on Google Colab (<a class="https" href="https://drive.google.com/drive/folders/1Sspfi8CvkOhGO001QkWbCuJ0tQwPXBjd?usp=sharing">Drive access</a>).
+ The geological model is generated randomly, producing resistivity maps 
+and apparent resistivity data computed with PyGIMLI. Below are examples 
+of the generated data: <span class="anchor" id="line-31"></span></p><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="target.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/target.png" title="target.png" width="410"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="input.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/input.png" title="input.png" width="410"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line891"><em> <strong>Left</strong>: Resistivity model. <strong>Right</strong>:
+ Apparent resisitivity computed from the resistivity model with PyGIMLI.
+ As the pseudo-section (apparent resisitivity table of value) are 
+pyramids, they need to be reshape. Here we chose to make a triangular 
+matrix. </em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-32"></span><span class="anchor" id="line-33"></span><span class="anchor" id="line-34"></span><span class="anchor" id="line-35"></span><span class="anchor" id="line-36"></span><p class="line874">While the initial implementation shows promising results: <span class="anchor" id="line-37"></span></p><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="couple.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/couple.png" title="couple.png" width="910"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line891"><em> <strong>Left</strong>: Resistivity model output by the model. <strong>Right</strong>:
+ Resistivity model corresponding to the input apparent resisitivity 
+pseudo-section that was fed in the model. Both local and global 
+structures are quite well handled, an observer can identify layers and 
+objects.</em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-38"></span><span class="anchor" id="line-39"></span><span class="anchor" id="line-40"></span><span class="anchor" id="line-41"></span><span class="anchor" id="line-42"></span><p class="line874">It also has some failures. <span class="anchor" id="line-43"></span></p><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="couple_dys.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/couple_dys.png" title="couple_dys.png" width="910"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line891"><em> <strong>Left</strong>: Resistivity model output by the model. <strong>Right</strong>:
+ Resistivity model corresponding to the input apparent resisitivity 
+pseudo-section that was fed in the model. It seems that during this 
+training, the model overfitted the data, or mode collapsed: the model 
+always outputs the same result no matter the input. This is likely due 
+to the small size of the dataset and the lack of robustness of the 
+neural network architecture.</em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-44"></span><span class="anchor" id="line-45"></span><span class="anchor" id="line-46"></span><span class="anchor" id="line-47"></span><span class="anchor" id="line-48"></span><p class="line874">These
+ initial experiments, although simplistic, suggest that the proposed 
+approach warrants deeper investigation and refinement to address such 
+limitations. <span class="anchor" id="line-49"></span><span class="anchor" id="line-50"></span></p><p class="line867">
+</p><h3 id="Bibliography">Bibliography</h3>
+<span class="anchor" id="line-51"></span><p class="line862">Following the preliminary experiments, a bibliographic review was conducted. The full bibliographic report is available here:  <a class="attachment" href="https://wiki.ring-team.org/BasileGandon/DeepLearningERTInversion?action=AttachFile&amp;do=view&amp;target=rapport_bibliographique.pdf" title="">rapport_bibliographique.pdf</a>. <span class="anchor" id="line-52"></span><span class="anchor" id="line-53"></span></p><p class="line874">Key Takeaways from the Bibliographic Review: <span class="anchor" id="line-54"></span><span class="anchor" id="line-55"></span></p><ul><li>Unlike
+ traditional deterministic and stochastic techniques, which iteratively 
+converge toward the best model(s) for the given data, deep learning 
+seeks to approximate the pseudo-inverse operator. This offers a shift in
+ methodology and opens the way to use both approaches. <span class="anchor" id="line-56"></span></li><li>The
+ ERT inversion problem is horizontally invariant but exhibits 
+significant variations along the vertical axis. Consequently, if a 
+convolutional neural network (CNN) is employed, it should avoid 
+weight-sharing along the vertical dimension to better capture the 
+specific nature of the problem. <span class="anchor" id="line-57"></span></li><li>ERT
+ data is often affected by noise, incomplete measurements (e.g., 
+discarded datapoints), and variations in survey contexts. Therefore, the
+ neural network must be designed to be both robust to noise and 
+adaptable to diverse contexts. <span class="anchor" id="line-58"></span></li><li>Existing
+ studies using deep learning for ERT inversion demonstrate promising 
+results, particularly with CNNs. However, these models are generally 
+limited to processing a single image shape and resolution, reducing 
+their applicability to varied real-world scenarios. <span class="anchor" id="line-59"></span><span class="anchor" id="line-60"></span></li></ul><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="CNN.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/CNN.png" title="CNN.png" width="910"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line891"><em>The
+ Figure shows the architecture of Convolutionnal Neural Netwrok followed
+ by a Multi-Layer Perceptron. The weights are shared among the pixels of
+ a same layer, same channel. Here, the classification part of the 
+network is a Multi_Layer Perceptron, meaning every neuron from one layer
+ is connected to every neuron of the following layer with a specific 
+weight and bias. Figure from <a class="nonexistent" href="https://wiki.ring-team.org/MathWorks">MathWorks</a> (2024).</em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-61"></span><span class="anchor" id="line-62"></span><span class="anchor" id="line-63"></span><p class="line867">
+</p><h3 id="Toy_model">Toy model</h3>
+<span class="anchor" id="line-64"></span><p class="line862">Based on the literature review, a promising approach to address the challenges identified is the implementation of a <strong>Dynamic Filter Network</strong>. This architecture integrates two deep learning components: <span class="anchor" id="line-65"></span><span class="anchor" id="line-66"></span></p><ol type="1"><li><p class="line862">A <strong>Multi-Layer Perceptron</strong> (MLP): <span class="anchor" id="line-67"></span></p><ul><li>Input: metadata such as survey length, number of electrodes, geological context, and survey type. <span class="anchor" id="line-68"></span></li><li>Output: convolutional kernels, which are subsequently used to adapt the weights of the convolutional layers dynamically. <span class="anchor" id="line-69"></span></li></ul></li><li><p class="line862">A <strong>Fully Convolutionnal Neural Network</strong> (FCNN): <span class="anchor" id="line-70"></span></p><ul><li>Input: a pseudo-section. <span class="anchor" id="line-71"></span></li><li>Output: a resistivity model. <span class="anchor" id="line-72"></span><span class="anchor" id="line-73"></span></li></ul></li></ol><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="FCNN_invERT.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/FCNN_invERT.png" title="FCNN_invERT.png" width="910"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <em>The
+ Fully Convolutionnal Neural Network takes as input an apparent 
+resistivity pseudo-section and is asked to output its resistivity model.</em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-74"></span><span class="anchor" id="line-75"></span><span class="anchor" id="line-76"></span><p class="line862">The <strong>MLP generates the weights for the FCNN</strong>, making the latter entirely dependent on the former. During training, <strong>backpropagation updates only the MLP weights</strong>
+ through the chain rule, propagating gradients from the FCNN output back
+ to the MLP. As a result, the FCNN weights are not explicitly trainable 
+parameters but are dynamically generated for each input context by the 
+MLP. This design enables: <span class="anchor" id="line-77"></span><span class="anchor" id="line-78"></span></p><ul><li>Flexibility in input shapes: The FCNN can process inputs of varying dimensions. <span class="anchor" id="line-79"></span></li><li>Context-aware adaptability: The MLP tailors the FCNN’s response based on metadata, ensuring a context-specific solution. <span class="anchor" id="line-80"></span><span class="anchor" id="line-81"></span></li></ul><div><table><tbody><tr>  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <img alt="DFN_invERT.png" class="attachment" src="BasileGandon_DeepLearningERTInversion%20-%20RING%20IntraWiki_fichiers/DFN_invERT.png" title="DFN_invERT.png" width="910"> </p></td>
+  <td style="&amp;quot; border:none;  text-align:left&amp;quot;"><p class="line862"> <em>For
+ each data sample, the input of the Dynamic Filter Network is the data 
+sample. More specifically, the measured data (apparent resisitivity 
+pseudo-section) is sent to the FCNN and the metadata (length of the 
+survey and number of electrodes) is sent to the MLP. The MLP outputs 
+convolutionnal kernels (or filters) that are then used to process the 
+input of the FCNN. The outputs is then a function of the data <strong>and</strong> the metadata. Backpropagation is possible all the way up to the MLP.</em> </p></td>
+</tr>
+</tbody></table></div><span class="anchor" id="line-82"></span><span class="anchor" id="line-83"></span><span class="anchor" id="line-84"></span><p class="line874">A
+ preliminary toy model was developed to validate the architecture, using
+ randomly generated images as the dataset. The dataset is divided into 
+sub-groups, where all images in a sub-group share the same shape, 
+allowing mini-batch processing. Across sub-groups, image shapes vary 
+randomly. Key aspects of evaluation include two types of generalization:
+ <span class="anchor" id="line-85"></span><span class="anchor" id="line-86"></span></p><ol type="1"><li>Sample
+ Generalization: the network's ability to correctly process and predict 
+for new images with the same shape as those in the training set 
+sub-groups. <span class="anchor" id="line-87"></span></li><li>Context 
+Generalization: the network's ability to generalize and perform 
+accurately on images with completely new shapes, outside the 
+distribution of training sub-groups. <span class="anchor" id="line-88"></span><span class="anchor" id="line-89"></span></li></ol><p class="line874">This
+ dual evaluation ensures that the model not only learns patterns 
+specific to known shapes but also adapts to unseen contexts, validating 
+its robustness and flexibility. <span class="anchor" id="line-90"></span><span class="anchor" id="line-91"></span></p><p class="line867">
+</p><h3 id="Exploration_of_parameters_space_.28before_02.2F2025.29">Exploration of parameters space (before 02/2025)</h3>
+<span class="anchor" id="line-92"></span><p class="line867">
+</p><h3 id="Data_from_Noddyverse">Data from Noddyverse</h3>
+<span class="anchor" id="line-93"></span><p class="line862">The Noddyverse data is available here : <a class="https" href="https://thredds.nci.org.au/thredds/catalog/tm64/noddyverse/bulk_models/catalog.html">https://thredds.nci.org.au/thredds/catalog/tm64/noddyverse/bulk_models/catalog.html</a> <span class="anchor" id="line-94"></span><span class="anchor" id="line-95"></span></p><p class="line874">Not every subsets should be downloaded. <span class="anchor" id="line-96"></span><span class="anchor" id="line-97"></span></p><p class="line862">"<em>The
+ 3D model is defined by superimposing user-defined kinematic events that
+ represent idealised geological events, namely base stratigraphy 
+(STRAT), folds (FOLD), faults (FAULT), unconformities (UNC), dykes 
+(DYKE), plugs (PLUG), shear zones (SHEAR-ZONE) and tilts (TILT), which 
+can be superimposed in any order, except for STRAT, which can only occur
+ once and has to be the first event.</em>" (<a class="https" href="https://essd.copernicus.org/articles/14/381/2022/#section2">Noddyverse paper</a>) <span class="anchor" id="line-98"></span><span class="anchor" id="line-99"></span></p><p class="line867">
+</p><h3 id="TODO">TODO</h3>
+<span class="anchor" id="line-100"></span><ul><li>Generate or adapt a geological dataset: <span class="anchor" id="line-101"></span><ul><li>Generate geological models (optional depending on whether an existing dataset is used). <span class="anchor" id="line-102"></span></li><li><p class="line862">Generate
+ pseudo-sections associated with the geological models, for different 
+noise levels, and their corresponding sensitivity matrices/maps. <strong>Questioning the transformation of the pyramid data structure to adapt it into a matrix (interpolation? Loss of symmetry? Other?)</strong>. <span class="anchor" id="line-103"></span></p></li></ul></li><li>Adapt the architecture to enable pooling layers (compress input information). <span class="anchor" id="line-104"></span></li><li>Adapt the architecture to allow filters to have different values depending on the depth. <span class="anchor" id="line-105"></span></li><li>Study the model's robustness against low-quality data (noisy, missing data). <span class="anchor" id="line-106"></span></li><li>Compare the accuracy with previously used methods. <span class="anchor" id="line-107"></span></li><li><p class="line891"><strong>IDEA</strong>: To generate several models given one input, why not use mixture of experts? <span class="anchor" id="line-108"></span></p></li><li>Implement tests to secure the code when new features will be implemented. <span class="anchor" id="line-109"></span></li></ul><span class="anchor" id="bottom"></span></div>
+<div id="pagebottom"></div>
+</div>
+
+
+<div id="footer">
+<ul id="credits">
+<li><a href="http://moinmo.in/" title="This site uses the MoinMoin Wiki software.">MoinMoin Powered</a></li><li><a href="http://moinmo.in/Python" title="MoinMoin is written in Python.">Python Powered</a></li><li><a href="http://moinmo.in/GPL" title="MoinMoin is GPL licensed.">GPL licensed</a></li><li><a href="http://validator.w3.org/check?uri=referer" title="Click here to validate this page.">Valid HTML 4.01</a></li>
+</ul>
+
+
+</div>
+
+
+
+</body></html>
