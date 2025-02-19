@@ -1,6 +1,6 @@
 import logging
 from torch import cat, randint, rand, Tensor, flip, sin, cos
-from torch.functional import F
+# from torch.functional import F
 from torch.utils.data import Dataset, DataLoader, random_split
 
 # Configure logging

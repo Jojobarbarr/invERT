@@ -23,7 +23,7 @@ def transform_and_visualize(x, noise=0.1):
         (
             step1
             + (x_width / 4) * torch.sin(
-                (2 * torch.pi * grid[1]) 
+                (2 * torch.pi * grid[1])
                 + torch.sin(2 * torch.pi * grid[0] / x_width)
             )
         ) % x_width \
@@ -31,10 +31,10 @@ def transform_and_visualize(x, noise=0.1):
             (2 * torch.pi * grid[0])
             + torch.cos(2 * torch.pi * grid[1] / x_height)
         )) % x_height
-     
+
     noise_tensor = (1 + noise * torch.randn_like(x))
     final_output = step2 * noise_tensor
-    
+
     return x, x_flip, step1, step2, final_output
 
 
