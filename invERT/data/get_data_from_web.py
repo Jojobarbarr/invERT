@@ -118,9 +118,32 @@ if __name__ == "__main__":
         6: "PLUG",
         7: "TILT",
     }
+
+    # ##### YOU CAN EDIT THIS IF YOU NEED TO #####
+
+    # The events lists allows to process any sub-set of the Noddyverse dataset.
     events_lists: list[list[int]] = [
-        [7, j, k] for j in range(1, 8) for k in range(1, 8)
+        [i, j, k]
+        for j in range(1, 8)
+        for k in range(1, 8)
+        for i in range(1, 8)
     ]
+    # events_lists: list[list[int]] = [
+    #     [2, 5, 7],
+    #     [5, 2, 4],
+    #     [7, 2, 2]
+    # ]
+
+    # Choose where you want to save the data.
+    dataset_folder: Path = Path("../../../dataset/6")
+
+    # If the dataserver changes, it happens here:
+    catalog_url: str = (
+        "https://thredds.nci.org.au/thredds/catalog/tm64/"
+        "noddyverse/bulk_models/catalog.xml"
+    )
+
+    # ##### NOW BE CAREFUL IF YOU TOUCH ANYTHING ELSE #####
 
     for events_list in events_lists:
         assert len(events_list) == 3, "len(events_list) must be 3."
@@ -130,13 +153,6 @@ if __name__ == "__main__":
             f"{EVENTS[events_list[2]]}"
         )
         tar_name: str = f"{events}.tar"
-
-        dataset_folder: Path = Path("../../../dataset/6")
-
-        catalog_url: str = (
-            "https://thredds.nci.org.au/thredds/catalog/tm64/"
-            "noddyverse/bulk_models/catalog.xml"
-        )
 
         tar_url: str = get_file_url_from_thredds(catalog_url, tar_name)
         tar_filename: Path | None = download_tar(tar_url,
