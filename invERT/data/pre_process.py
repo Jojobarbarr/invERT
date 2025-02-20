@@ -49,13 +49,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pattern",
         type=str,
-        default="*_FOLD_*",
+        default="*",
         help="Pattern to match the folders."
     )
     parser.add_argument(
         "--data_root",
         type=Path,
-        default=Path("../../../dataset/5/models_by_code/"),
+        default=Path("../your/dataset/path"),
         help="Root folder of the data."
     )
     args = parser.parse_args()
