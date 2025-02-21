@@ -89,17 +89,20 @@ def clean_extracted_files(dataset_folder: Path, events: str) -> None:
             file.unlink()
 
 
-def process_events(events_list: list[int], events_map: dict[int, str],
-                   catalog_root: ET.Element, dataset_folder: Path) -> None:
+def process_events(first_event: str,
+                   events_list: list[int],
+                   events_map: dict[int, str],
+                   catalog_root: ET.Element,
+                   dataset_folder: Path) -> None:
     """
     Process one tar file: get URL, download, extract, delete tar, and clean
     up.
     """
     # Build the events string and tar file name.
     events = (
+        f"{first_event}_"
         f"{events_map[events_list[0]]}_"
-        f"{events_map[events_list[1]]}_"
-        f"{events_map[events_list[2]]}"
+        f"{events_map[events_list[1]]}"
     )
     tar_name = f"{events}.tar"
     print(f"\n=== Processing {tar_name} ===")
@@ -119,7 +122,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Download and extract Noddyverse data.")
     parser.add_argument(
         "first_event",
-        type=int,
+        type=str,
         help=(
             "First event subset to download. "
             "Choose from 1 (FOLD), 2 (FAULT), 3 (UNCONFORMITY), "
@@ -127,10 +130,7 @@ if __name__ == "__main__":
         )
     )
     args = parser.parse_args()
-    first_event = args.first_event
-    assert 1 <= first_event <= 7, (
-        "Argument must be between 1 and 7, refer to help."
-    )
+    first_event: str = args.first_event.upper()
 
     # Mapping for event names.
     EVENTS: dict[int, str] = {
@@ -143,15 +143,19 @@ if __name__ == "__main__":
         7: "TILT",
     }
 
+    assert first_event in EVENTS.values(), (
+        f"Event {first_event} not in {EVENTS.values()}"
+    )
+
     # Create the list of event combinations.
     events_lists: list[list[int]] = [
-        [first_event, j, k]
+        [j, k]
         for j in range(1, 8)
         for k in range(1, 8)
     ]
 
     # Define the folder where data will be stored.
-    dataset_folder: Path = Path(f"../../../dataset/{EVENTS[first_event]}")
+    dataset_folder: Path = Path(f"../../../dataset/{first_event}")
     dataset_folder.mkdir(parents=True, exist_ok=True)
 
     # Download the catalog XML once.
@@ -167,13 +171,14 @@ if __name__ == "__main__":
         futures = [
             executor.submit(
                 process_events,
+                first_event,
                 events_list,
                 EVENTS,
                 catalog_root,
                 dataset_folder
             )
             for events_list in events_lists
-            if len(events_list) == 3
+            if len(events_list) == 2
         ]
         # Optionally wait for all futures and handle exceptions.
         for future in as_completed(futures):

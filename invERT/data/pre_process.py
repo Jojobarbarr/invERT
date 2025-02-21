@@ -47,16 +47,16 @@ def flush_buffer(npz_file_counter: int,
 if __name__ == "__main__":
     parser = ArgumentParser("Extract data from g12.gz files concurrently.")
     parser.add_argument(
+        "data_root",
+        type=Path,
+        help="Root folder of the data."
+    )
+    parser.add_argument(
+        "-p",
         "--pattern",
         type=str,
         default="*",
         help="Pattern to match the folders."
-    )
-    parser.add_argument(
-        "--data_root",
-        type=Path,
-        default=Path("../your/dataset/path"),
-        help="Root folder of the data."
     )
     args = parser.parse_args()
 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         if nbr_files_to_extract == 0:
             continue
 
-        combined_array: np.ndarray[np.int8] = np.empty(
+        combined_array: np.ndarray[np.int8] = np.zeros(
             (buffer_size, 200, 200),
             dtype=np.int8)
         counter: int = 0
