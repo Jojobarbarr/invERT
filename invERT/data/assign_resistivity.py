@@ -155,7 +155,8 @@ def process_pseudo_section_wenner_array(rhoa: list[float],
         for j in range(col_start, col_end):
             # For even rows, use a special average at the center column
             if is_even_row and j == (num_cols - 1) // 2:
-                pseudo_section[i, j] = (rhoa[value_index - 1] + rhoa[value_index]) / 2
+                pseudo_section[i, j] = (
+                    rhoa[value_index - 1] + rhoa[value_index]) / 2
             else:
                 pseudo_section[i, j] = rhoa[value_index]
                 value_index += 1
@@ -177,7 +178,7 @@ def process_pseudo_section_schlumberger_array(rhoa: list[float],
         end_col: int = num_cols - i
         num_values_this_row: int = end_col - start_col
         pseudo_section[i, start_col:end_col] = rhoa[value_index: value_index +
-                                            num_values_this_row]
+                                                    num_values_this_row]
         value_index += num_values_this_row
 
     return pseudo_section
@@ -187,9 +188,12 @@ def save_sample_hdf5(filepath, samples):
     with h5py.File(filepath, "w") as f:
         f.create_dataset("nbr_electrodes", data=[s[0] for s in samples])
         f.create_dataset("pixel_length", data=[s[1] for s in samples])
-        f.create_dataset("scheme_name", data=np.array([s[2] for s in samples], dtype="S"))
-        f.create_dataset("sample_log_res", data=np.array([s[3] for s in samples]), compression="lzf")
-        f.create_dataset("pseudo_section", data=np.array([s[4] for s in samples]), compression="lzf")
+        f.create_dataset("scheme_name", data=np.array(
+            [s[2] for s in samples], dtype="S"))
+        f.create_dataset("sample_log_res", data=np.array(
+            [s[3] for s in samples]), compression="lzf")
+        f.create_dataset("pseudo_section", data=np.array(
+            [s[4] for s in samples]), compression="lzf")
 
 
 if __name__ == "__main__":
@@ -240,6 +244,6 @@ if __name__ == "__main__":
         else:
             pseudo_section: np.ndarray[np.float64] = \
                 process_pseudo_section_schlumberger_array(result['rhoa'], nbr_electrodes)
-        
-        sample: list[int, int, str, np.ndarray[np.float64], np.ndarray[np.float64]] = \
-            [nbr_electrodes, pixel_length, scheme_name, target_log_res, pseudo_section]
+
+        sample: list[int, int, str, np.ndarray[np.float64], np.ndarray[np.float64]] = [
+            nbr_electrodes, pixel_length, scheme_name, target_log_res, pseudo_section]
