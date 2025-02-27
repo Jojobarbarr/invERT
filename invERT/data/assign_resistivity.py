@@ -1,8 +1,6 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
 import h5py
-from time import perf_counter
 import math
 import random as rd
 import pygimli as pg
@@ -184,7 +182,16 @@ def process_pseudo_section_schlumberger_array(rhoa: list[float],
     return pseudo_section
 
 
-def save_sample_hdf5(filepath, samples):
+def save_sample_hdf5(filepath: Path,
+                     samples: list[
+                         list[
+                             int,
+                             int,
+                             str,
+                             np.ndarray[np.float64],
+                             np.ndarray[np.float64]
+                         ]
+                     ]) -> None:
     with h5py.File(filepath, "w") as f:
         f.create_dataset("nbr_electrodes", data=[s[0] for s in samples])
         f.create_dataset("pixel_length", data=[s[1] for s in samples])
@@ -208,6 +215,16 @@ if __name__ == "__main__":
         "wa": "Wenner array",
         "slm": "Schlumberger array"
     }
+
+    samples: list[
+        list[
+            int,
+            int,
+            str,
+            np.ndarray[np.float64],
+            np.ndarray[np.float64]
+        ]
+    ] = []
 
     N_SAMPLES: int = 1000
     for sample_to_process in tqdm(range(N_SAMPLES),
@@ -240,10 +257,17 @@ if __name__ == "__main__":
 
         if scheme_name == "wa":
             pseudo_section: np.ndarray[np.float64] = \
-                process_pseudo_section_wenner_array(result['rhoa'], nbr_electrodes)
+                process_pseudo_section_wenner_array(result['rhoa'],
+                                                    nbr_electrodes)
         else:
             pseudo_section: np.ndarray[np.float64] = \
-                process_pseudo_section_schlumberger_array(result['rhoa'], nbr_electrodes)
+                process_pseudo_section_schlumberger_array(result['rhoa'],
+                                                          nbr_electrodes)
 
-        sample: list[int, int, str, np.ndarray[np.float64], np.ndarray[np.float64]] = [
-            nbr_electrodes, pixel_length, scheme_name, target_log_res, pseudo_section]
+        samples.append([
+            nbr_electrodes,
+            pixel_length,
+            scheme_name,
+            target_log_res,
+            pseudo_section
+        ])
