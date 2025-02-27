@@ -9,6 +9,7 @@ import pygimli.physics.ert as ert
 import concurrent.futures
 from argparse import ArgumentParser, Namespace
 
+
 def detransform(log_res: float | np.ndarray[float]
                 ) -> float | np.ndarray[float]:
     return 2 * 10 ** (4 * log_res)
@@ -273,14 +274,14 @@ if __name__ == "__main__":
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = [executor.submit(process_sample,
-                                        section,
-                                        scheme_names)
-                        for section in multi_arrays]
+                                       section,
+                                       scheme_names)
+                       for section in multi_arrays]
 
             for future in tqdm(concurrent.futures.as_completed(futures),
-                            total=len(multi_arrays),
-                            desc="Processing samples",
-                            unit="sample"):
+                               total=len(multi_arrays),
+                               desc="Processing samples",
+                               unit="sample"):
 
                 samples.append(future.result())
                 if len(samples) >= 8192:
