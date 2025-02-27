@@ -243,6 +243,12 @@ if __name__ == "__main__":
         default=Path("../../../dataset/processed"),
         help="Path to the output folder."
     )
+    parser.add_argument(
+        "--file",
+        type=Path,
+        default=Path("Null"),
+        help="File to process."
+    )
     args: Namespace = parser.parse_args()
 
     dataset_path: Path = args.dataset_path
@@ -258,13 +264,16 @@ if __name__ == "__main__":
         "slm": "Schlumberger array"
     }
 
-    files = list(dataset_path.glob("*.npz"))
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(tqdm(executor.map(count_samples, files),
-                            total=len(files),
-                            desc="Counting samples",
-                            unit="file"))
-    N_SAMPLES = sum(results)
+    if args.file != Path("Null"):
+        files = [dataset_path / args.file]
+    else:
+        files = list(dataset_path.glob("*.npz"))
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(tqdm(executor.map(count_samples, files),
+                                total=len(files),
+                                desc="Counting samples",
+                                unit="file"))
+        N_SAMPLES = sum(results)
 
     samples: list = []
     counter: int = 0
@@ -285,7 +294,7 @@ if __name__ == "__main__":
                                unit="sample"):
 
                 samples.append(future.result())
-                if len(samples) >= 8192:
+                if len(samples) >= 512:
                     save_sample_pt(output_path / f"{counter}.pt", samples)
                     counter += 1
                     samples.clear()
