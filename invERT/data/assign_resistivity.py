@@ -7,7 +7,7 @@ import pygimli as pg
 from tqdm import tqdm
 import pygimli.physics.ert as ert
 import concurrent.futures
-
+from argparse import ArgumentParser, Namespace
 
 def detransform(log_res: float | np.ndarray[float]
                 ) -> float | np.ndarray[float]:
@@ -228,8 +228,24 @@ def count_samples(file):
 
 
 if __name__ == "__main__":
-    dataset_path: Path = Path("../../../dataset/clean_reduced_unified")
-    output_path: Path = Path("../../../dataset/processed")
+    parser: ArgumentParser = ArgumentParser(
+        "Generate synthetic samples from the given dataset.")
+    parser.add_argument(
+        "--dataset_path",
+        type=Path,
+        default=Path("../../../dataset/clean_reduced_unified"),
+        help="Path to the dataset folder."
+    )
+    parser.add_argument(
+        "--output_path",
+        type=Path,
+        default=Path("../../../dataset/processed"),
+        help="Path to the output folder."
+    )
+    args: Namespace = parser.parse_args()
+
+    dataset_path: Path = args.dataset_path
+    output_path: Path = args.output_path
 
     random_gen: np.random.Generator = np.random.default_rng()
 
@@ -253,7 +269,7 @@ if __name__ == "__main__":
 
     for file_idx, file in enumerate(files):
         print(f"Processing {file.name} ({file_idx}/{len(files)})...")
-        multi_arrays = np.load(file)["arr_0"][:10]
+        multi_arrays = np.load(file)["arr_0"]
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = [executor.submit(process_sample,
