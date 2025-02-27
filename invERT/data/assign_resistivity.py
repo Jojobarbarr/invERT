@@ -247,6 +247,7 @@ if __name__ == "__main__":
 
     dataset_path: Path = args.dataset_path
     output_path: Path = args.output_path
+    output_path.mkdir(parents=True, exist_ok=True)
 
     random_gen: np.random.Generator = np.random.default_rng()
 
