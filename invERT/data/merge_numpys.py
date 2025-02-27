@@ -21,6 +21,10 @@ def merge_samples(input_dir: Path,
 
     folders: list[Path] = sorted(input_dir.glob("*"))
     for folder in tqdm(folders, desc="Merging npz files", unit="folder"):
+        # Skip the folder with "SHEAR-ZONE", "DYKE", "PLUG" or "TILT" in the name
+        if any(substring in folder.name for substring in ["SHEAR-ZONE", "DYKE", "PLUG", "TILT"]):
+            print(f"Skipping {folder.name}")
+            continue
         # Retrieve all .npz files in input_dir (including subdirectories)
         files: list[Path] = sorted(folder.rglob("*.npz"))
         for file in files:
@@ -49,14 +53,14 @@ def merge_samples(input_dir: Path,
 
 def main(args: Namespace) -> None:
     if args.type == "all":
-        input_dir = Path("../../../dataset/clean/")
-        output_dir = Path("../../../dataset/clean_unified/")
+        input_dir = Path("../../../dataset/clean_reduced/")
+        output_dir = Path("../../../dataset/clean_reduced_unified/")
     else:  # args.type == "sub"
         if not args.first_event:
             raise ValueError("first_event must be provided when type is 'sub'")
         input_dir = Path("../../../dataset") / args.first_event / \
             "models_by_code/models"
-        output_dir = Path("../../../dataset/clean/") / args.first_event
+        output_dir = Path("../../../dataset/clean_reduced/") / args.first_event
 
     merge_samples(input_dir, output_dir)
 
