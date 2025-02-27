@@ -1,11 +1,12 @@
 import numpy as np
 from pathlib import Path
-import h5py
+import torch
 import math
 import random as rd
 import pygimli as pg
 from tqdm import tqdm
 import pygimli.physics.ert as ert
+import concurrent.futures
 
 
 def detransform(log_res: float | np.ndarray[float]
@@ -30,28 +31,17 @@ def compute_active_columns(row: int,
     return col_start, col_end
 
 
-def target_section(nbr_npz: int,
-                   dataset_path: Path
-                   ) -> np.ndarray[np.int8]:
-    # Randomly select a section from a random .npz file
-    random_npz: int = rd.randint(0, nbr_npz - 1)
-    with np.load(
-        dataset_path / f"{random_npz}.npz",
-        mmap_mode='r'
-    ) as multi_array:
-        section_id: int = rd.randint(0, len(multi_array["arr_0"]) - 1)
-        return multi_array["arr_0"][section_id]
-
-
-def define_electrodes_param() -> tuple[int, int, float]:
+def define_electrodes_param(section_width: int
+                            ) -> tuple[int, int, int]:
     nbr_electrodes: int = rd.randint(24, 96)
     # We keep 2 or 3 pixels between each electrodes
-    if nbr_electrodes * 3 < section.shape[1]:
+    if nbr_electrodes * 3 < section_width:
+        space_between_electrodes: int = rd.randint(2, 3)
         total_pixels_to_keep: int = (nbr_electrodes - 1) * 3
     else:
+        space_between_electrodes: int = 2
         total_pixels_to_keep: int = (nbr_electrodes - 1) * 2
-    pixel_length: float = rd.randint(1, 20) / 2
-    return nbr_electrodes, total_pixels_to_keep, pixel_length
+    return nbr_electrodes, total_pixels_to_keep, space_between_electrodes
 
 
 def generate_target(total_pixels_to_keep: int,
@@ -81,12 +71,11 @@ def generate_target(total_pixels_to_keep: int,
 def generate_resistivity(target: np.ndarray[np.int8]
                          ) -> tuple[np.ndarray[np.float64],
                                     np.ndarray[np.float64]]:
-    rock_classes: np.ndarray[np.int8] = np.unique(target)
-    target_log_res: np.ndarray[np.float64] = np.zeros_like(target,
-                                                           dtype=np.float64)
-    for rock_class in rock_classes:
-        random_log_resistivity: np.float64 = rd.uniform(0, 1)
-        target_log_res[target == rock_class] = random_log_resistivity
+    unique_classes, inv = np.unique(target, return_inverse=True)
+    # Generate a random value for each unique rock class
+    random_log_res = np.random.uniform(0, 1, size=len(unique_classes))
+    # Use inverse indices to quickly assign values
+    target_log_res = random_log_res[inv].reshape(target.shape)
     return target_log_res, detransform(target_log_res)
 
 
@@ -110,7 +99,6 @@ def generate_world(total_pixels_to_keep: int
 def generate_electrode_array(total_pixels_to_keep: int,
                              nbr_electrodes: int,
                              scheme_names: dict[str, str],
-                             pixel_length: float
                              ) -> tuple[pg.DataContainerERT, str]:
     elec_array: np.float64 = np.linspace(
         0.,
@@ -120,8 +108,7 @@ def generate_electrode_array(total_pixels_to_keep: int,
     )
     scheme_name = rd.choice(list(scheme_names.keys()))
     return ert.createData(elecs=elec_array,
-                          schemeName=scheme_name,
-                          spacing=pixel_length), scheme_name
+                          schemeName=scheme_name), scheme_name
 
 
 def process_pseudo_section_wenner_array(rhoa: list[float],
@@ -182,25 +169,62 @@ def process_pseudo_section_schlumberger_array(rhoa: list[float],
     return pseudo_section
 
 
-def save_sample_hdf5(filepath: Path,
-                     samples: list[
-                         list[
-                             int,
-                             int,
-                             str,
-                             np.ndarray[np.float64],
-                             np.ndarray[np.float64]
-                         ]
-                     ]) -> None:
-    with h5py.File(filepath, "w") as f:
-        f.create_dataset("nbr_electrodes", data=[s[0] for s in samples])
-        f.create_dataset("pixel_length", data=[s[1] for s in samples])
-        f.create_dataset("scheme_name", data=np.array(
-            [s[2] for s in samples], dtype="S"))
-        f.create_dataset("sample_log_res", data=np.array(
-            [s[3] for s in samples]), compression="lzf")
-        f.create_dataset("pseudo_section", data=np.array(
-            [s[4] for s in samples]), compression="lzf")
+def save_sample_pt(filepath: Path,
+                   samples: list[tuple[int, int, str, np.ndarray, np.ndarray]]
+                   ) -> None:
+    torch.save(samples, filepath)
+    print(f"\nSaved {filepath.name}.\n")
+
+
+def process_sample(section: np.ndarray[np.int8],
+                   scheme_names: dict
+                   ) -> tuple[int,
+                              int,
+                              str,
+                              np.ndarray[np.float64],
+                              np.ndarray[np.float64]
+                              ]:
+    nbr_electrodes, total_pixels_to_keep, space_between_electrodes = \
+        define_electrodes_param(section.shape[1])
+
+    target: np.ndarray = generate_target(total_pixels_to_keep, section)
+    target_log_res, target_res = generate_resistivity(target)
+
+    world: pg.core.Mesh = generate_world(total_pixels_to_keep)
+    scheme, scheme_name = generate_electrode_array(
+        total_pixels_to_keep,
+        nbr_electrodes,
+        scheme_names,
+    )
+
+    result: pg.DataContainerERT = ert.simulate(
+        world,
+        res=target_res.ravel(),
+        scheme=scheme,
+        verbose=False,
+    )
+
+    if scheme_name == "wa":
+        pseudo_section: np.ndarray[np.float64] = \
+            process_pseudo_section_wenner_array(result['rhoa'],
+                                                nbr_electrodes)
+    else:
+        pseudo_section: np.ndarray[np.float64] = \
+            process_pseudo_section_schlumberger_array(result['rhoa'],
+                                                      nbr_electrodes)
+
+    return (
+        nbr_electrodes,
+        space_between_electrodes,
+        scheme_name,
+        target_log_res,
+        pseudo_section
+    )
+
+
+def count_samples(file):
+    with np.load(file, mmap_mode='r') as data:
+        return data["arr_0"].shape[0]
 
 
 if __name__ == "__main__":
@@ -216,58 +240,34 @@ if __name__ == "__main__":
         "slm": "Schlumberger array"
     }
 
-    samples: list[
-        list[
-            int,
-            int,
-            str,
-            np.ndarray[np.float64],
-            np.ndarray[np.float64]
-        ]
-    ] = []
+    files = list(dataset_path.glob("*.npz"))
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(tqdm(executor.map(count_samples, files),
+                            total=len(files),
+                            desc="Counting samples",
+                            unit="file"))
+    N_SAMPLES = sum(results)
 
-    N_SAMPLES: int = 1000
-    for sample_to_process in tqdm(range(N_SAMPLES),
-                                  desc="Processing samples",
-                                  unit="sample",
-                                  total=N_SAMPLES):
-        section: np.ndarray[np.int8] = target_section(nbr_npz, dataset_path)
+    samples: list = []
+    counter: int = 0
 
-        nbr_electrodes, total_pixels_to_keep, pixel_length = \
-            define_electrodes_param()
+    for file_idx, file in enumerate(files):
+        print(f"Processing {file.name} ({file_idx}/{len(files)})...")
+        multi_arrays = np.load(file)["arr_0"][:10]
 
-        target: np.ndarray = generate_target(total_pixels_to_keep, section)
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            futures = [executor.submit(process_sample,
+                                        section,
+                                        scheme_names)
+                        for section in multi_arrays]
 
-        target_log_res, target_res = generate_resistivity(target)
+            for future in tqdm(concurrent.futures.as_completed(futures),
+                            total=len(multi_arrays),
+                            desc="Processing samples",
+                            unit="sample"):
 
-        world: pg.core.Mesh = generate_world(total_pixels_to_keep)
-
-        scheme, scheme_name = generate_electrode_array(
-            total_pixels_to_keep,
-            nbr_electrodes,
-            scheme_names,
-            pixel_length
-        )
-
-        result: pg.DataContainerERT = ert.simulate(
-            world,
-            res=target_res.ravel(),
-            scheme=scheme
-        )
-
-        if scheme_name == "wa":
-            pseudo_section: np.ndarray[np.float64] = \
-                process_pseudo_section_wenner_array(result['rhoa'],
-                                                    nbr_electrodes)
-        else:
-            pseudo_section: np.ndarray[np.float64] = \
-                process_pseudo_section_schlumberger_array(result['rhoa'],
-                                                          nbr_electrodes)
-
-        samples.append([
-            nbr_electrodes,
-            pixel_length,
-            scheme_name,
-            target_log_res,
-            pseudo_section
-        ])
+                samples.append(future.result())
+                if len(samples) >= 8192:
+                    save_sample_pt(output_path / f"{counter}.pt", samples)
+                    counter += 1
+                    samples.clear()
