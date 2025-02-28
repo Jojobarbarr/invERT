@@ -228,58 +228,75 @@ def count_samples(file):
         return data["arr_0"].shape[0]
 
 
+def flag_files_processed(output_path: Path) -> int:
+    max_npz_processed = 0
+    if not output_path.exists():
+        print(f"Creating {output_path}...")
+        output_path.mkdir(parents=True, exist_ok=True)
+    for file in output_path.glob("*.txt"):
+        max_npz_processed = max(max_npz_processed, int(file.stem))
+    with open(output_path / f"{max_npz_processed + 1}.txt", "w") as f:
+        f.write("")
+    return max_npz_processed
+
+
 if __name__ == "__main__":
     parser: ArgumentParser = ArgumentParser(
         "Generate synthetic samples from the given dataset.")
     parser.add_argument(
+        "-d",
         "--dataset_path",
         type=Path,
-        default=Path("../../../dataset/clean_reduced_unified"),
+        default=Path("path/to/dataset"),
         help="Path to the dataset folder."
     )
     parser.add_argument(
+        "-o",
         "--output_path",
         type=Path,
-        default=Path("../../../dataset/processed"),
+        default=Path("../where/to/store/samples"),
         help="Path to the output folder."
     )
     parser.add_argument(
-        "--file",
-        type=Path,
-        default=Path("Null"),
-        help="File to process."
+        "-n"
+        "--number_of_file_to_process",
+        type=int,
+        default=2,
+        help="Number of files to process."
     )
     args: Namespace = parser.parse_args()
 
     dataset_path: Path = args.dataset_path
+
     output_path: Path = args.output_path
+
+    flag_files: int = flag_files_processed(output_path) * 2
+    files_to_process: list[Path] = [
+        dataset_path / f"{idx}.npz"
+        for idx in range(flag_files, flag_files + 2)
+    ]
+
     output_path.mkdir(parents=True, exist_ok=True)
-
-    random_gen: np.random.Generator = np.random.default_rng()
-
-    nbr_npz: int = len(list(dataset_path.glob("*.npz")))
 
     scheme_names: dict[str, str] = {
         "wa": "Wenner array",
         "slm": "Schlumberger array"
     }
 
-    if args.file != Path("Null"):
-        files = [dataset_path / args.file]
-    else:
-        files = list(dataset_path.glob("*.npz"))
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = list(tqdm(executor.map(count_samples, files),
-                                total=len(files),
-                                desc="Counting samples",
-                                unit="file"))
-        N_SAMPLES = sum(results)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(tqdm(executor.map(count_samples, files_to_process),
+                            total=len(files_to_process),
+                            desc="Counting samples",
+                            unit="file"))
+    N_SAMPLES = sum(results)
 
     samples: list = []
     counter: int = 0
 
-    for file_idx, file in enumerate(files):
-        print(f"Processing {file.name} ({file_idx}/{len(files)})...")
+    for file_idx, file in enumerate(files_to_process):
+        print(
+            f"Processing {file.name} ({file_idx}/{len(files_to_process)})..."
+        )
         multi_arrays = np.load(file)["arr_0"]
 
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -294,7 +311,9 @@ if __name__ == "__main__":
                                unit="sample"):
 
                 samples.append(future.result())
-                if len(samples) >= 512:
+                if len(samples) >= 1024:
                     save_sample_pt(output_path / f"{counter}.pt", samples)
                     counter += 1
                     samples.clear()
+    if len(samples) > 0:
+        save_sample_pt(output_path / f"{counter}.pt", samples)

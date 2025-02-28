@@ -96,8 +96,8 @@ python-dateutil==2.9.0.post0
 python-json-logger==3.2.1
 pytz==2025.1
 pyvista==0.44.2
-pywin32==308
-pywinpty==2.0.15
+pywin32==308; sys_platform == 'win32'
+pywinpty==2.0.15; sys_platform == 'win32'
 PyYAML==6.0.2
 pyzmq==26.2.0
 referencing==0.36.2
@@ -120,9 +120,6 @@ sympy==1.12
 terminado==0.18.1
 tetgen==0.6.5
 tinycss2==1.4.0
-torch==2.4.1+cu124
-torchaudio==2.4.1+cu124
-torchvision==0.19.1+cu124
 tornado==6.4.2
 tqdm==4.66.5
 traitlets==5.14.3
