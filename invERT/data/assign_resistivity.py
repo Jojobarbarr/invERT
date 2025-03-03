@@ -282,12 +282,15 @@ if __name__ == "__main__":
         "wa": "Wenner array",
         "slm": "Schlumberger array"
     }
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(tqdm(executor.map(count_samples, files_to_process),
-                            total=len(files_to_process),
-                            desc="Counting samples",
-                            unit="file"))
+    PARALLEL: bool = False
+    if PARALLEL:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = list(tqdm(executor.map(count_samples, files_to_process),
+                                total=len(files_to_process),
+                                desc="Counting samples",
+                                unit="file"))
+    else:
+        results = [count_samples(file) for file in files_to_process]
     N_SAMPLES = sum(results)
 
     samples: list = []
@@ -299,18 +302,27 @@ if __name__ == "__main__":
         )
         multi_arrays = np.load(file)["arr_0"]
 
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            futures = [executor.submit(process_sample,
-                                       section,
-                                       scheme_names)
-                       for section in multi_arrays]
+        if PARALLEL:
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                futures = [executor.submit(process_sample,
+                                        section,
+                                        scheme_names)
+                        for section in multi_arrays]
 
-            for future in tqdm(concurrent.futures.as_completed(futures),
-                               total=len(multi_arrays),
-                               desc="Processing samples",
-                               unit="sample"):
+                for future in tqdm(concurrent.futures.as_completed(futures),
+                                total=len(multi_arrays),
+                                desc="Processing samples",
+                                unit="sample"):
 
-                samples.append(future.result())
+                    samples.append(future.result())
+                    if len(samples) >= 1024:
+                        save_sample_pt(output_path / f"{counter}.pt", samples)
+                        counter += 1
+                        samples.clear()
+        else:
+            for section in tqdm(multi_arrays, desc="Processing samples",
+                            unit="sample"):
+                samples.append(process_sample(section, scheme_names))
                 if len(samples) >= 1024:
                     save_sample_pt(output_path / f"{counter}.pt", samples)
                     counter += 1
