@@ -228,14 +228,17 @@ def count_samples(file):
         return data["arr_0"].shape[0]
 
 
-def flag_files_processed(output_path: Path) -> int:
+def flag_files_processed(output_path: Path,
+                         nb_files_to_process: int
+                         ) -> int:
     max_npz_processed = 0
     if not output_path.exists():
         print(f"Creating {output_path}...")
         output_path.mkdir(parents=True, exist_ok=True)
     for file in output_path.glob("*.txt"):
         max_npz_processed = max(max_npz_processed, int(file.stem))
-    with open(output_path / f"{max_npz_processed + 1}.txt", "w") as f:
+    with open(output_path / f"{max_npz_processed + nb_files_to_process}.txt",
+              "w") as f:
         f.write("")
     return max_npz_processed
 
@@ -258,7 +261,7 @@ if __name__ == "__main__":
         help="Path to the output folder."
     )
     parser.add_argument(
-        "-n"
+        "-n",
         "--number_of_file_to_process",
         type=int,
         default=2,
@@ -276,10 +279,13 @@ if __name__ == "__main__":
 
     output_path: Path = args.output_path
 
-    flag_files: int = flag_files_processed(output_path) * 2
+    number_of_file_to_process: int = args.number_of_file_to_process
+
+    flag_files: int = flag_files_processed(output_path,
+                                           number_of_file_to_process)
     files_to_process: list[Path] = [
         dataset_path / f"{idx}.npz"
-        for idx in range(flag_files, flag_files + 2)
+        for idx in range(flag_files, flag_files + number_of_file_to_process)
     ]
 
     output_path.mkdir(parents=True, exist_ok=True)
