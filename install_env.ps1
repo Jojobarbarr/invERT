@@ -20,4 +20,4 @@ python -m pip install torch torchvision torchaudio --index-url https://download.
 python -m pip install -r requirements.txt
 
 # Create a helper script to activate the conda environment later if needed.
-Set-Content -Path "activate_conda.ps1" -Value "powershell -ExecutionPolicy ByPass -NoExit -Command '& 'C:\anaconda3\shell\condabin\conda-hook.ps1'; conda activate venv'"
+Set-Content -Path "activate_conda.ps1" -Value "& 'C:\anaconda3\shell\condabin\conda-hook.ps1' ; conda activate venv"
