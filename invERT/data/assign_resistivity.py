@@ -264,6 +264,12 @@ if __name__ == "__main__":
         default=2,
         help="Number of files to process."
     )
+    parser.add_argument(
+        "-np",
+        "--non_parallel",
+        action="store_true",
+        help="Don't use parallel processing."
+    )
     args: Namespace = parser.parse_args()
 
     dataset_path: Path = args.dataset_path
@@ -282,7 +288,7 @@ if __name__ == "__main__":
         "wa": "Wenner array",
         "slm": "Schlumberger array"
     }
-    PARALLEL: bool = False
+    PARALLEL: bool = not args.non_parallel
     if PARALLEL:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = list(tqdm(executor.map(count_samples, files_to_process),
