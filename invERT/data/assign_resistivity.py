@@ -305,14 +305,14 @@ if __name__ == "__main__":
         if PARALLEL:
             with concurrent.futures.ProcessPoolExecutor() as executor:
                 futures = [executor.submit(process_sample,
-                                        section,
-                                        scheme_names)
-                        for section in multi_arrays]
+                                           section,
+                                           scheme_names)
+                           for section in multi_arrays]
 
                 for future in tqdm(concurrent.futures.as_completed(futures),
-                                total=len(multi_arrays),
-                                desc="Processing samples",
-                                unit="sample"):
+                                   total=len(multi_arrays),
+                                   desc="Processing samples",
+                                   unit="sample"):
 
                     samples.append(future.result())
                     if len(samples) >= 1024:
@@ -321,7 +321,7 @@ if __name__ == "__main__":
                         samples.clear()
         else:
             for section in tqdm(multi_arrays, desc="Processing samples",
-                            unit="sample"):
+                                unit="sample"):
                 samples.append(process_sample(section, scheme_names))
                 if len(samples) >= 1024:
                     save_sample_pt(output_path / f"{counter}.pt", samples)
