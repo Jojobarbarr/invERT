@@ -306,7 +306,7 @@ if __name__ == "__main__":
     N_SAMPLES = sum(results)
 
     samples: list = []
-    counter: int = 0
+    counter: int = len(list(output_path.glob("*.pt")))
 
     for file_idx, file in enumerate(files_to_process):
         print(
