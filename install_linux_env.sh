@@ -31,4 +31,4 @@ pip3 install --upgrade pip
 # Install PyTorch with GPU support
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
-echo "Installation complete. Run 'micromamba activate venv' to use the environment."
+echo "Installation complete. Run 'source ~/.bashrc' then 'micromamba activate venv' to use the environment."
