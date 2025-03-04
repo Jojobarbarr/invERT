@@ -20,7 +20,7 @@ eval "$(./bin/micromamba shell hook -s posix)"
 source ~/.bashrc
 
 # Create the virtual environment with the required packages (pygimli, ipykernel for notebooks, json5 for configuration files)
-micromamba create -n venv python=3.11 gimli::pygimli ipykernel json5 -c conda-forge
+micromamba create -n venv -y python=3.11 gimli::pygimli ipykernel json5 -c conda-forge
 
 # Activate the environment
 micromamba activate venv
