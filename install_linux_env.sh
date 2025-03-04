@@ -12,11 +12,12 @@ fi
 # Get the archive and extract it in bin/micromamba
 curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
 
+export MAMBA_ROOT_PREFIX='/root/micromamba'
+eval "$(./bin/micromamba shell hook -s posix)"
+
 # Init the shell
 ./bin/micromamba shell init -s bash -r ~/micromamba
-
-# Apply the modifications on the current shell
-eval "$(/bin/micromamba shell hook --shell=bash)"
+source ~/.bashrc
 
 # Create the virtual environment with the required packages (pygimli, ipykernel for notebooks, json5 for configuration files)
 micromamba create -n venv python=3.11 gimli::pygimli ipykernel json5 -c conda-forge
