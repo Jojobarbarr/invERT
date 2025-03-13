@@ -53,7 +53,7 @@ def extract_subsection(
         vertical_fraction: float,
         start: tuple[int | None, int | None] | None = (None, None),
         return_slices: bool = False,
-        ) -> np.ndarray[np.int8] | tuple[np.ndarray[np.int8], slice, slice]:
+) -> np.ndarray[np.int8] | tuple[np.ndarray[np.int8], slice, slice]:
     """
     Extracts a subsection of the section.
 
@@ -203,7 +203,7 @@ def transform(res: float | np.ndarray[float]
     Maps a resistivity value to a normalized log resistivity value.
 
     The transformation is given by:
-    :math:`\rho_{log} = \log_{10}(\rho / 2) / 4`
+    :math:`\rho_{log} = \\log_{10}(\rho / 2) / 4`
 
     Parameters
     ----------
@@ -753,7 +753,7 @@ def create_simulations(surveys: list[dc.Survey],
 def compute_forward_models(
         resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal],
         resistivity_models_flat: list[np.ndarray[np.float64]],
-        ) -> tuple[list[np.ndarray[np.float64]], np.ndarray[float]]:
+) -> tuple[list[np.ndarray[np.float64]], np.ndarray[float]]:
     """
     Compute the forward models for the resistivity simulations.
 
@@ -888,7 +888,7 @@ def process_sample(DATA_PATH: Path,
     resistivity_simulations: list[list[dc.simulation_2d.Simulation2DNodal]] = \
         create_simulations(
             surveys, meshes, actived_cells_list, topo_2ds, resistivity_maps
-        )
+    )
 
     # ----- 12. Compute the forward models -----
     forward_models, timers = compute_forward_models(
@@ -960,13 +960,13 @@ def main_parallel(NUM_SAMPLES: int,
                   resized_lengths: np.ndarray,
                   ) -> tuple[
                       list[np.ndarray[np.float64]], list[np.ndarray[float]]
-                      ]:
+]:
     """
     Main function to generate the pseudo sections in parallel.
     """
     # Build set for available npz files.
     npz_keys = [int(npz.stem) for npz in DATA_PATH.glob("*.npz")]
-    
+
     # If samples are independent, each process can get its own copy of the set.
     already_selected = set()
 
