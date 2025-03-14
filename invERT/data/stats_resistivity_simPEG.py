@@ -1,12 +1,7 @@
 # SimPEG functionality
 from simpeg.electromagnetics.static import resistivity as dc
 from simpeg import maps
-
-# To suppress warnings 
-import warnings
-warnings.filterwarnings(
-    "ignore", category=simpeg.utils.solver_utils.DefaultSolverWarning
-)
+from simpeg.utils.solver_utils import DefaultSolverWarning
 
 # discretize functionality
 from discretize import TensorMesh
@@ -21,7 +16,15 @@ import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
 from functools import partial
+import pickle
 from os import cpu_count
+
+# To suppress warnings DefaultSolverWarning from SimPEG
+import warnings
+warnings.filterwarnings(
+    "ignore", category=DefaultSolverWarning
+)
+
 
 def create_slice(max_length: int,
                  fraction: float,
@@ -165,7 +168,6 @@ def resize(sample: np.ndarray[np.int8],
     """
     src_rows, src_cols = sample.shape
     dst_rows, dst_cols = new_shape
-
     # Compute nearest neighbor indices
     row_indices: np.ndarray[int] = np.round(
         np.linspace(0, src_rows - 1, dst_rows)
@@ -178,7 +180,6 @@ def resize(sample: np.ndarray[np.int8],
     resized_array: np.ndarray[np.int8] = sample[
         row_indices[:, None], col_indices
     ]
-
     return resized_array
 
 
@@ -509,7 +510,7 @@ def parse_input() -> Namespace:
         help="Name of the scheme."
     )
     parser.add_argument(
-        "-v",
+        "-vf",
         "--vertical_fraction",
         type=float,
         default=0.5,
@@ -527,6 +528,12 @@ def parse_input() -> Namespace:
         type=int,
         default=cpu_count(),
         help="Number of workers to use."
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print information about the forward models."
     )
     return parser.parse_args()
 
@@ -726,7 +733,8 @@ def create_simulations(surveys: list[dc.Survey],
                        meshes: list[TensorMesh],
                        actived_cells_list: list[np.ndarray],
                        topo_2ds: list[np.ndarray[float]],
-                       resistivity_maps: list[maps.IdentityMap]
+                       resistivity_maps: list[maps.IdentityMap],
+                       verbose: bool,
                        ) -> list[dc.simulation_2d.Simulation2DNodal]:
     """
     Create the simulations for the resistivity models.
@@ -743,6 +751,8 @@ def create_simulations(surveys: list[dc.Survey],
         The topographies.
     resistivity_maps : list[maps.IdentityMap]
         The resistivity maps.
+    verbose : bool
+        If True, print information about the forward models.
 
     Returns
     -------
@@ -759,7 +769,7 @@ def create_simulations(surveys: list[dc.Survey],
 
     resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal] = [
         dc.simulation_2d.Simulation2DNodal(
-            mesh, survey=survey, rhoMap=resistivity_map
+            mesh, survey=survey, rhoMap=resistivity_map, verbose=verbose
         )
         for mesh, survey, resistivity_map in zip(
             meshes, surveys, resistivity_maps
@@ -814,6 +824,7 @@ def process_sample(DATA_PATH: Path,
                    VERTICAL_FRACTION: float,
                    AIR_RESISTIVITY: float,
                    resized_lengths: np.ndarray[int],
+                   verbose: bool,
                    sample: int,
                    ) -> tuple[
                        np.ndarray[float],
@@ -841,13 +852,15 @@ def process_sample(DATA_PATH: Path,
         The resistivity of the air.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
+    verbose : bool
+        If True, print information about the forward models.
     sample : int
-        The sample index.
+        The sample index. Th
 
     Returns
     -------
-    tuple[np.ndarray[float], np.ndarray[float]]
-        The pseudo sections and the timer array.
+    tuple[np.ndarray[float], np.ndarray[float], np.ndarray[float]]
+        The pseudo section, the timer and the resistivity model.
     """
     # ----- 1. Select a unique section -----
     section: np.ndarray[np.int8] = sample_section(
@@ -909,7 +922,12 @@ def process_sample(DATA_PATH: Path,
     # ----- 11. Create the simulations -----
     resistivity_simulations: list[list[dc.simulation_2d.Simulation2DNodal]] = \
         create_simulations(
-            surveys, meshes, actived_cells_list, topo_2ds, resistivity_maps
+            surveys,
+            meshes,
+            actived_cells_list,
+            topo_2ds,
+            resistivity_maps,
+            verbose
     )
 
     # ----- 12. Compute the forward models -----
@@ -938,9 +956,42 @@ def main(NUM_SAMPLES: int,
          AIR_RESISTIVITY: float,
          DATA_PATH: Path,
          resized_lengths: np.ndarray[int],
-         ) -> None:
+         VERBOSE: bool
+         ) -> tuple[
+             list[np.ndarray[float]],
+             list[np.ndarray[float]],
+             list[np.ndarray[float]]
+]:
     """
     Main function to generate the pseudo sections.
+
+    Parameters
+    ----------
+    NUM_SAMPLES : int
+        The number of samples to generate.
+    NUM_ELECTRODES : int
+        The number of electrodes.
+    SCHEME_NAME : str
+        The name of the scheme.
+    VERTICAL_FRACTION : float
+        The fraction of the section to keep vertically.
+    AIR_RESISTIVITY : float
+        The resistivity of the air.
+    DATA_PATH : Path
+        Path to the data directory.
+    resized_lengths : np.ndarray[int]
+        The lengths to resize the sections to.
+    VERBOSE : bool
+        If True, print information about the forward models.
+
+    Returns
+    -------
+    tuple[
+        list[np.ndarray[float]],
+        list[np.ndarray[float]],
+        list[np.ndarray[float]]
+    ]
+        The pseudo sections, the timers and the resistivity models.
     """
     # Build set for available npz files.
     npz_keys: list[int] = [int(npz.stem) for npz in DATA_PATH.glob("*.npz")]
@@ -953,12 +1004,12 @@ def main(NUM_SAMPLES: int,
     # This will hold the time taken to compute the forward models for each
     # sample.
     timers_list: list[np.ndarray[float]] = []
-    resistivity_models: list[np.ndarray[float]] = []
+    resistivity_models_list: list[np.ndarray[float]] = []
 
     for sample in tqdm(range(NUM_SAMPLES),
                        desc="Processing samples",
                        unit="sample"):
-        pseudosections, timers, resistivity_model = process_sample(
+        pseudosections, timers, resistivity_models = process_sample(
             DATA_PATH,
             npz_keys,
             already_selected,
@@ -967,11 +1018,12 @@ def main(NUM_SAMPLES: int,
             VERTICAL_FRACTION,
             AIR_RESISTIVITY,
             resized_lengths,
+            VERBOSE,
             sample,
         )
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
-        resistivity_models.append(resistivity_model)
+        resistivity_models_list.append(resistivity_models)
     return pseudosections_list, timers_list, resistivity_models
 
 
@@ -983,6 +1035,8 @@ def main_parallel(NUM_SAMPLES: int,
                   DATA_PATH: Path,
                   resized_lengths: np.ndarray,
                   num_max_workers: int,
+                  VERBOSE: bool,
+                  
                   ) -> tuple[
                       list[np.ndarray[float]],
                       list[np.ndarray[float]],
@@ -990,6 +1044,36 @@ def main_parallel(NUM_SAMPLES: int,
 ]:
     """
     Main function to generate the pseudo sections in parallel.
+
+    Parameters
+    ----------
+    NUM_SAMPLES : int
+        The number of samples to generate.
+    NUM_ELECTRODES : int
+        The number of electrodes.
+    SCHEME_NAME : str
+        The name of the scheme.
+    VERTICAL_FRACTION : float
+        The fraction of the section to keep vertically.
+    AIR_RESISTIVITY : float
+        The resistivity of the air.
+    DATA_PATH : Path
+        Path to the data directory.
+    resized_lengths : np.ndarray[int]
+        The lengths to resize the sections to.
+    num_max_workers : int
+        The number of workers to use.
+    VERBOSE : bool
+        If True, print information about the forward models.
+
+    Returns
+    -------
+    tuple[
+        list[np.ndarray[float]],
+        list[np.ndarray[float]],
+        list[np.ndarray[float]]
+    ]
+        The pseudo sections, the timers and the resistivity models.
     """
     # Build set for available npz files.
     npz_keys = [int(npz.stem) for npz in DATA_PATH.glob("*.npz")]
@@ -1007,12 +1091,13 @@ def main_parallel(NUM_SAMPLES: int,
         SCHEME_NAME,
         VERTICAL_FRACTION,
         AIR_RESISTIVITY,
-        resized_lengths
+        resized_lengths,
+        VERBOSE
     )
 
     pseudosections_list = []
     timers_list = []
-    resistivity_models = []
+    resistivity_models_list = []
 
     with concurrent.futures.ProcessPoolExecutor(
         max_workers=num_max_workers
@@ -1028,12 +1113,12 @@ def main_parallel(NUM_SAMPLES: int,
         )
 
     # Each result is expected to be a tuple (pseudosections, timers)
-    for pseudosections, timers, resistivity_model in results:
+    for pseudosections, timers, resistivity_models in results:
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
-        resistivity_models.append(resistivity_model)
+        resistivity_models_list.append(resistivity_models)
 
-    return pseudosections_list, timers_list
+    return pseudosections_list, timers_list, resistivity_models_list
 
 
 if __name__ == "__main__":
@@ -1077,6 +1162,16 @@ if __name__ == "__main__":
 
     PARALLEL: bool = not args.non_parallel
 
+    VERBOSE: bool = args.verbose
+    if PARALLEL and VERBOSE:
+        warnings.warn(
+            "\nVerbose mode is not advised when using parallel processing"
+            " as it may lead to a lot of output difficult to interpret.\n"
+            "Consider using -np flag to disable parallel processing if you "
+            "want to see the output of the forward models, or disable the "
+            "verbose mode.\n"
+        )
+
     # Calculate total pixels to keep for each spacing.
     resized_lengths: np.ndarray[np.int32] = \
         (NUM_ELECTRODES - 1) * SPACE_BETWEEN_ELECTRODES_LIST
@@ -1084,7 +1179,7 @@ if __name__ == "__main__":
     if PARALLEL:
         MAX_NUM_WORKERS: int = args.num_max_workers
         print(f"Number of workers set to {MAX_NUM_WORKERS}")
-        pseudosections, timers, resistivity_model = main_parallel(
+        pseudosections, timers, resistivity_models = main_parallel(
             NUM_SAMPLES,
             NUM_ELECTRODES,
             SCHEME_NAME,
@@ -1093,17 +1188,21 @@ if __name__ == "__main__":
             DATA_PATH,
             resized_lengths,
             MAX_NUM_WORKERS,
+            VERBOSE
         )
     else:
-        pseudosections, timers, resistivity_model = main(
+        pseudosections, timers, resistivity_models = main(
             NUM_SAMPLES,
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
             AIR_RESISTIVITY,
             DATA_PATH,
-            SPACE_BETWEEN_ELECTRODES_LIST
+            resized_lengths,
+            VERBOSE
         )
-    np.save(DATA_PATH / "resistivity_models.npy", np.array(resistivity_model))
-    np.save(DATA_PATH / "pseudosections.npy", np.array(pseudosections))
-    np.save(DATA_PATH / "timers.npy", timers)
+
+    np.save(OUTPUT_PATH / "pseudosections.npy", np.array(pseudosections))
+    np.save(OUTPUT_PATH / "timers.npy", timers)
+    with open(OUTPUT_PATH / "resistivity_models.pkl", "wb") as f:
+        pickle.dump(resistivity_models, f)
