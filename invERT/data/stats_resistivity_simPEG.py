@@ -801,7 +801,7 @@ def process_sample(DATA_PATH: Path,
                        np.ndarray[np.float64],
                        np.ndarray[float],
                        np.ndarray[float]
-                   ]:
+]:
     """
     Process a sample.
 
