@@ -1155,12 +1155,12 @@ if __name__ == "__main__":
 
     AIR_RESISTIVITY: float = 1e8
 
-    with open(DATA_PATH / "args.txt", "w") as f:
+    with open(OUTPUT_PATH / "args.txt", "w") as f:
         f.write(f"Data path: {DATA_PATH}\n")
         f.write(f"Number of samples: {NUM_SAMPLES}\n")
         f.write(f"Number of electrodes: {NUM_ELECTRODES}\n")
         f.write(
-            f"Piwels between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}\n"
+            f"Pixels between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}\n"
         )
         f.write(f"Scheme name: {SCHEME_NAME}\n")
         f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
