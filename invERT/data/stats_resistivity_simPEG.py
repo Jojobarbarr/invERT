@@ -2,6 +2,12 @@
 from simpeg.electromagnetics.static import resistivity as dc
 from simpeg import maps
 
+# To suppress warnings 
+import warnings
+warnings.filterwarnings(
+    "ignore", category=simpeg.utils.solver_utils.DefaultSolverWarning
+)
+
 # discretize functionality
 from discretize import TensorMesh
 from discretize.utils import active_from_xyz
@@ -15,7 +21,7 @@ import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
 from functools import partial
-
+from os import cpu_count
 
 def create_slice(max_length: int,
                  fraction: float,
@@ -345,7 +351,7 @@ def compute_active_columns(row: int,
 
 def pseudosection_schlumberger(rhoa: list[float],
                                nbr_electrodes: int
-                               ) -> np.ndarray[np.float64]:
+                               ) -> np.ndarray[float]:
     """
     Creates a pseudo section from a forward model result using a Schlumberger
     array.
@@ -359,7 +365,7 @@ def pseudosection_schlumberger(rhoa: list[float],
 
     Returns
     -------
-    np.ndarray[np.float64]
+    np.ndarray[float]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -370,8 +376,8 @@ def pseudosection_schlumberger(rhoa: list[float],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[np.float64] = np.empty(
-        (num_rows, num_cols), dtype=np.float64)
+    pseudo_section: np.ndarray[float] = np.empty(
+        (num_rows, num_cols), dtype=float)
     pseudo_section.fill(np.nan)
 
     # Fill the pseudo section with the apparent resistivity values.
@@ -390,7 +396,7 @@ def pseudosection_schlumberger(rhoa: list[float],
 
 def pseudosection_wenner(rhoa: list[float],
                          nbr_electrodes: int
-                         ) -> np.ndarray[np.float64]:
+                         ) -> np.ndarray[float]:
     """
     Creates a pseudo section from a forward model result using a Wenner array.
 
@@ -403,7 +409,7 @@ def pseudosection_wenner(rhoa: list[float],
 
     Returns
     -------
-    np.ndarray[np.float64]
+    np.ndarray[float]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -424,8 +430,8 @@ def pseudosection_wenner(rhoa: list[float],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[np.float64] = np.empty(
-        (num_rows, num_cols), dtype=np.float64)
+    pseudo_section: np.ndarray[float] = np.empty(
+        (num_rows, num_cols), dtype=float)
     pseudo_section.fill(np.nan)
 
     value_index: int = 0
@@ -469,6 +475,11 @@ def parse_input() -> Namespace:
         help="Path to the data directory",
     )
     parser.add_argument(
+        "output_path",
+        type=Path,
+        help="Path to the output directory",
+    )
+    parser.add_argument(
         "-n",
         "--num_samples",
         type=int,
@@ -510,6 +521,13 @@ def parse_input() -> Namespace:
         action="store_true",
         help="Do not use parallel processing."
     )
+    parser.add_argument(
+        "-w",
+        "--num_max_workers",
+        type=int,
+        default=cpu_count(),
+        help="Number of workers to use."
+    )
     return parser.parse_args()
 
 
@@ -539,8 +557,8 @@ def resize_sections(section: np.ndarray[np.int8],
 
 def assign_resistivity(resized_sections: list[np.ndarray[np.int8]],
                        section: np.ndarray[np.int8]
-                       ) -> tuple[list[np.ndarray[np.float64]],
-                                  list[np.ndarray[np.float64]]]:
+                       ) -> tuple[list[np.ndarray[float]],
+                                  list[np.ndarray[float]]]:
     """
     Assign resistivity values to the resized sections.
 
@@ -553,19 +571,19 @@ def assign_resistivity(resized_sections: list[np.ndarray[np.int8]],
 
     Returns
     -------
-    tuple[list[np.ndarray[np.float64]], list[np.ndarray[np.float64]]]
+    tuple[list[np.ndarray[float]], list[np.ndarray[float]]]
         The normalized log resistivity models and the resistivity models.
     """
     # Extract the rock classes from the original section
     rock_classes = np.unique(section)
     # Create a random normalized log resistivity value for each rock class
-    norm_log_res_values: np.ndarray[np.float64] = np.random.uniform(
+    norm_log_res_values: np.ndarray[float] = np.random.uniform(
         0, 1, size=len(rock_classes)
     )
     # Assign the random log resistivity value to each pixel according to
     # its rock class
-    norm_log_resistivity_models: list[np.ndarray[np.float64]] = []
-    resistivity_models: list[np.ndarray[np.float64]] = []
+    norm_log_resistivity_models: list[np.ndarray[float]] = []
+    resistivity_models: list[np.ndarray[float]] = []
     for resized_section in resized_sections:
         # Get the mapping between rock classes and pixels
         _, inv = np.unique(resized_section, return_inverse=True)
@@ -580,19 +598,19 @@ def assign_resistivity(resized_sections: list[np.ndarray[np.int8]],
     return norm_log_resistivity_models, resistivity_models
 
 
-def flatten_models(resistivity_models: list[np.ndarray[np.float64]]
-                   ) -> list[np.ndarray[np.float64]]:
+def flatten_models(resistivity_models: list[np.ndarray[float]]
+                   ) -> list[np.ndarray[float]]:
     """
     Flatten the resistivity models.
 
     Parameters
     ----------
-    resistivity_models : list[np.ndarray[np.float64]]
+    resistivity_models : list[np.ndarray[float]]
         The resistivity models.
 
     Returns
     -------
-    list[np.ndarray[np.float64]]
+    list[np.ndarray[float]]
         The flattened resistivity models.
     """
     return [
@@ -601,14 +619,14 @@ def flatten_models(resistivity_models: list[np.ndarray[np.float64]]
     ]
 
 
-def create_meshes(resistivity_models: list[np.ndarray[np.float64]]
+def create_meshes(resistivity_models: list[np.ndarray[float]]
                   ) -> list[TensorMesh]:
     """
     Create the meshes for the simulations.
 
     Parameters
     ----------
-    resistivity_models : list[np.ndarray[np.float64]]
+    resistivity_models : list[np.ndarray[float]]
         The resistivity models.
 
     Returns
@@ -628,7 +646,7 @@ def create_meshes(resistivity_models: list[np.ndarray[np.float64]]
     ]
 
 
-def create_surveys(resistivity_models: list[np.ndarray[np.float64]],
+def create_surveys(resistivity_models: list[np.ndarray[float]],
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
                    ) -> list[dc.Survey]:
@@ -637,7 +655,7 @@ def create_surveys(resistivity_models: list[np.ndarray[np.float64]],
 
     Parameters
     ----------
-    resistivity_models : list[np.ndarray[np.float64]]
+    resistivity_models : list[np.ndarray[float]]
         The resistivity models.
     NUM_ELECTRODES : int
         The number of electrodes.
@@ -676,22 +694,22 @@ def create_surveys(resistivity_models: list[np.ndarray[np.float64]],
     return surveys
 
 
-def create_topo2ds(resistivity_models: list[np.ndarray[np.float64]]
-                   ) -> list[np.ndarray[np.float64]]:
+def create_topo2ds(resistivity_models: list[np.ndarray[float]]
+                   ) -> list[np.ndarray[float]]:
     """
     Create the topography for the simulations.
 
     Parameters
     ----------
-    resistivity_models : list[np.ndarray[np.float64]]
+    resistivity_models : list[np.ndarray[float]]
         The resistivity models.
 
     Returns
     -------
-    list[np.ndarray[np.float64]]
+    list[np.ndarray[float]]
         The topographies.
     """
-    topo_2ds: list[np.ndarray[np.float64]] = []
+    topo_2ds: list[np.ndarray[float]] = []
     for resistivity_model in resistivity_models:
         # Create x coordinates
         x_topo = np.linspace(
@@ -707,7 +725,7 @@ def create_topo2ds(resistivity_models: list[np.ndarray[np.float64]]
 def create_simulations(surveys: list[dc.Survey],
                        meshes: list[TensorMesh],
                        actived_cells_list: list[np.ndarray],
-                       topo_2ds: list[np.ndarray[np.float64]],
+                       topo_2ds: list[np.ndarray[float]],
                        resistivity_maps: list[maps.IdentityMap]
                        ) -> list[dc.simulation_2d.Simulation2DNodal]:
     """
@@ -721,7 +739,7 @@ def create_simulations(surveys: list[dc.Survey],
         The meshes.
     actived_cells_list : list[np.ndarray]
         The active cells.
-    topo_2ds : list[np.ndarray[np.float64]]
+    topo_2ds : list[np.ndarray[float]]
         The topographies.
     resistivity_maps : list[maps.IdentityMap]
         The resistivity maps.
@@ -752,8 +770,8 @@ def create_simulations(surveys: list[dc.Survey],
 
 def compute_forward_models(
         resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal],
-        resistivity_models_flat: list[np.ndarray[np.float64]],
-) -> tuple[list[np.ndarray[np.float64]], np.ndarray[float]]:
+        resistivity_models_flat: list[np.ndarray[float]],
+) -> tuple[list[np.ndarray[float]], np.ndarray[float]]:
     """
     Compute the forward models for the resistivity simulations.
 
@@ -761,15 +779,15 @@ def compute_forward_models(
     ----------
     resistivity_simulations : list[dc.simulation_2d.Simulation2DNodal]
         The resistivity simulations.
-    resistivity_models_flat : list[np.ndarray[np.float64]]
+    resistivity_models_flat : list[np.ndarray[float]]
         The flattened resistivity models.
 
     Returns
     -------
-    tuple[list[np.ndarray[np.float64]], np.ndarray[float]]
+    tuple[list[np.ndarray[float]], np.ndarray[float]]
         The forward models and the time taken to compute them.
     """
-    forward_models: list[np.ndarray[np.float64]] = []
+    forward_models: list[np.ndarray[float]] = []
     timer_arr: np.ndarray[float] = np.zeros(
         len(resistivity_simulations), dtype=float
     )
@@ -798,7 +816,7 @@ def process_sample(DATA_PATH: Path,
                    resized_lengths: np.ndarray[int],
                    sample: int,
                    ) -> tuple[
-                       np.ndarray[np.float64],
+                       np.ndarray[float],
                        np.ndarray[float],
                        np.ndarray[float]
                    ]:
@@ -828,7 +846,7 @@ def process_sample(DATA_PATH: Path,
 
     Returns
     -------
-    tuple[np.ndarray[np.float64], np.ndarray[float]]
+    tuple[np.ndarray[float], np.ndarray[float]]
         The pseudo sections and the timer array.
     """
     # ----- 1. Select a unique section -----
@@ -857,7 +875,7 @@ def process_sample(DATA_PATH: Path,
     )
 
     # ----- 6. Flatten the resistivity models -----
-    resistivity_models_flat: list[np.ndarray[np.float64]] = flatten_models(
+    resistivity_models_flat: list[np.ndarray[float]] = flatten_models(
         resistivity_models
     )
 
@@ -872,7 +890,7 @@ def process_sample(DATA_PATH: Path,
     )
 
     # ----- 9. Create the topography -----
-    topo_2ds: list[np.ndarray[np.float64]] = create_topo2ds(
+    topo_2ds: list[np.ndarray[float]] = create_topo2ds(
         resistivity_models
     )
 
@@ -931,11 +949,11 @@ def main(NUM_SAMPLES: int,
     already_selected: set[tuple[int, int]] = set()
 
     # This will hold the pseudo sections for all samples.
-    pseudosections_list: list[np.ndarray[np.float64]] = []
+    pseudosections_list: list[np.ndarray[float]] = []
     # This will hold the time taken to compute the forward models for each
     # sample.
     timers_list: list[np.ndarray[float]] = []
-    resistivity_models: list[np.ndarray[np.float64]] = []
+    resistivity_models: list[np.ndarray[float]] = []
 
     for sample in tqdm(range(NUM_SAMPLES),
                        desc="Processing samples",
@@ -964,10 +982,11 @@ def main_parallel(NUM_SAMPLES: int,
                   AIR_RESISTIVITY: float,
                   DATA_PATH: Path,
                   resized_lengths: np.ndarray,
+                  num_max_workers: int,
                   ) -> tuple[
-                      list[np.ndarray[np.float64]],
                       list[np.ndarray[float]],
-                      list[np.ndarray[np.float64]]
+                      list[np.ndarray[float]],
+                      list[np.ndarray[float]]
 ]:
     """
     Main function to generate the pseudo sections in parallel.
@@ -995,7 +1014,9 @@ def main_parallel(NUM_SAMPLES: int,
     timers_list = []
     resistivity_models = []
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=num_max_workers
+    ) as executor:
         # Using executor.map preserves the order of results.
         results = list(
             tqdm(
@@ -1018,14 +1039,42 @@ def main_parallel(NUM_SAMPLES: int,
 if __name__ == "__main__":
     args: Namespace = parse_input()
     DATA_PATH: Path = args.data_path
+    print(f"Data path set to {DATA_PATH}")
+
+    OUTPUT_PATH: Path = args.output_path
+    OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
+    print(f"Output path set to {OUTPUT_PATH}")
+
     NUM_SAMPLES: int = args.num_samples
+    print(f"Number of samples set to {NUM_SAMPLES}")
+
     NUM_ELECTRODES: int = args.num_electrodes
+    print(f"Number of electrodes set to {NUM_ELECTRODES}")
+
     SPACE_BETWEEN_ELECTRODES_LIST: np.ndarray[int] = np.array(
         args.space_between_electrodes, dtype=int
     )
+    print(f"Spaces between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}")
+    print(f"({len(SPACE_BETWEEN_ELECTRODES_LIST)} forward passes per sample)")
+
     SCHEME_NAME: str = args.scheme_name
+    print(f"Scheme name set to {SCHEME_NAME}")
+
     VERTICAL_FRACTION: float = args.vertical_fraction
+    print(f"Vertical fraction set to {VERTICAL_FRACTION}")
+
     AIR_RESISTIVITY: float = 1e8
+
+    with open(DATA_PATH / "args.txt", "w") as f:
+        f.write(f"Data path: {DATA_PATH}\n")
+        f.write(f"Number of samples: {NUM_SAMPLES}\n")
+        f.write(f"Number of electrodes: {NUM_ELECTRODES}\n")
+        f.write(
+            f"Piwels between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}\n"
+        )
+        f.write(f"Scheme name: {SCHEME_NAME}\n")
+        f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
+
     PARALLEL: bool = not args.non_parallel
 
     # Calculate total pixels to keep for each spacing.
@@ -1033,6 +1082,8 @@ if __name__ == "__main__":
         (NUM_ELECTRODES - 1) * SPACE_BETWEEN_ELECTRODES_LIST
 
     if PARALLEL:
+        MAX_NUM_WORKERS: int = args.num_max_workers
+        print(f"Number of workers set to {MAX_NUM_WORKERS}")
         pseudosections, timers, resistivity_model = main_parallel(
             NUM_SAMPLES,
             NUM_ELECTRODES,
@@ -1040,7 +1091,8 @@ if __name__ == "__main__":
             VERTICAL_FRACTION,
             AIR_RESISTIVITY,
             DATA_PATH,
-            resized_lengths
+            resized_lengths,
+            MAX_NUM_WORKERS,
         )
     else:
         pseudosections, timers, resistivity_model = main(
