@@ -797,7 +797,11 @@ def process_sample(DATA_PATH: Path,
                    AIR_RESISTIVITY: float,
                    resized_lengths: np.ndarray[int],
                    sample: int,
-                   ) -> tuple[np.ndarray[np.float64], np.ndarray[float]]:
+                   ) -> tuple[
+                       np.ndarray[np.float64],
+                       np.ndarray[float],
+                       np.ndarray[float]
+                   ]:
     """
     Process a sample.
 
@@ -906,7 +910,7 @@ def process_sample(DATA_PATH: Path,
         for forward_model in forward_models
     ]
 
-    return pseudosections, timers
+    return pseudosections, timers, resistivity_models
 
 
 def main(NUM_SAMPLES: int,
@@ -931,11 +935,12 @@ def main(NUM_SAMPLES: int,
     # This will hold the time taken to compute the forward models for each
     # sample.
     timers_list: list[np.ndarray[float]] = []
+    resistivity_models: list[np.ndarray[np.float64]] = []
 
     for sample in tqdm(range(NUM_SAMPLES),
                        desc="Processing samples",
                        unit="sample"):
-        pseudosections, timers = process_sample(
+        pseudosections, timers, resistivity_model = process_sample(
             DATA_PATH,
             npz_keys,
             already_selected,
@@ -948,7 +953,8 @@ def main(NUM_SAMPLES: int,
         )
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
-    return pseudosections_list, timers_list
+        resistivity_models.append(resistivity_model)
+    return pseudosections_list, timers_list, resistivity_models
 
 
 def main_parallel(NUM_SAMPLES: int,
@@ -959,7 +965,9 @@ def main_parallel(NUM_SAMPLES: int,
                   DATA_PATH: Path,
                   resized_lengths: np.ndarray,
                   ) -> tuple[
-                      list[np.ndarray[np.float64]], list[np.ndarray[float]]
+                      list[np.ndarray[np.float64]],
+                      list[np.ndarray[float]],
+                      list[np.ndarray[np.float64]]
 ]:
     """
     Main function to generate the pseudo sections in parallel.
@@ -985,6 +993,7 @@ def main_parallel(NUM_SAMPLES: int,
 
     pseudosections_list = []
     timers_list = []
+    resistivity_models = []
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         # Using executor.map preserves the order of results.
@@ -998,9 +1007,10 @@ def main_parallel(NUM_SAMPLES: int,
         )
 
     # Each result is expected to be a tuple (pseudosections, timers)
-    for pseudosections, timers in results:
+    for pseudosections, timers, resistivity_model in results:
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
+        resistivity_models.append(resistivity_model)
 
     return pseudosections_list, timers_list
 
@@ -1023,7 +1033,7 @@ if __name__ == "__main__":
         (NUM_ELECTRODES - 1) * SPACE_BETWEEN_ELECTRODES_LIST
 
     if PARALLEL:
-        pseudosections, timers = main_parallel(
+        pseudosections, timers, resistivity_model = main_parallel(
             NUM_SAMPLES,
             NUM_ELECTRODES,
             SCHEME_NAME,
@@ -1033,7 +1043,7 @@ if __name__ == "__main__":
             resized_lengths
         )
     else:
-        pseudosections, timers = main(
+        pseudosections, timers, resistivity_model = main(
             NUM_SAMPLES,
             NUM_ELECTRODES,
             SCHEME_NAME,
@@ -1042,6 +1052,6 @@ if __name__ == "__main__":
             DATA_PATH,
             SPACE_BETWEEN_ELECTRODES_LIST
         )
-
+    np.save(DATA_PATH / "resistivity_models.npy", np.array(resistivity_model))
     np.save(DATA_PATH / "pseudosections.npy", np.array(pseudosections))
     np.save(DATA_PATH / "timers.npy", timers)
