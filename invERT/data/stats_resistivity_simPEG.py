@@ -1024,7 +1024,7 @@ def main(NUM_SAMPLES: int,
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
         resistivity_models_list.append(resistivity_models)
-    return pseudosections_list, timers_list, resistivity_models
+    return pseudosections_list, timers_list, resistivity_models_list
 
 
 def main_parallel(NUM_SAMPLES: int,
