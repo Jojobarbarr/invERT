@@ -1036,7 +1036,7 @@ def main_parallel(NUM_SAMPLES: int,
                   resized_lengths: np.ndarray,
                   num_max_workers: int,
                   VERBOSE: bool,
-                  
+
                   ) -> tuple[
                       list[np.ndarray[float]],
                       list[np.ndarray[float]],
