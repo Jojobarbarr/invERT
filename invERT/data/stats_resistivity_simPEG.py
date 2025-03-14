@@ -539,7 +539,8 @@ def parse_input() -> Namespace:
 
 
 def resize_sections(section: np.ndarray[np.int8],
-                    resized_lengths: np.ndarray[int]
+                    resized_lengths: np.ndarray[int],
+                    vertical_fraction: float,
                     ) -> list[np.ndarray[np.int8]]:
     """
     Resize the sections to the given lengths.
@@ -550,6 +551,8 @@ def resize_sections(section: np.ndarray[np.int8],
         The sections to resize.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
+    vertical_fraction : float
+        Sample vertical length will be vertical_fraction * section width.
 
     Returns
     -------
@@ -557,7 +560,9 @@ def resize_sections(section: np.ndarray[np.int8],
         The resized sections.
     """
     return [
-        resize(section, (section.shape[0], resize_length))
+        resize(
+            section, (int(resize_length * vertical_fraction), resize_length)
+        )
         for resize_length in resized_lengths
     ]
 
@@ -879,7 +884,7 @@ def process_sample(DATA_PATH: Path,
     )
     # ----- 3. Resize subsection for Each Spacing Value -----
     resized_sections: list[np.ndarray[np.int8]] = resize_sections(
-        sub_section, resized_lengths
+        sub_section, resized_lengths, VERTICAL_FRACTION
     )
 
     # ----- 4. Compute Log Resistivity for Each Resized Section -----
