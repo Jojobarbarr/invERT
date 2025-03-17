@@ -604,7 +604,7 @@ def compute_forward_models(meshes: list[pg.core.Mesh],
                            ) -> tuple[
                                list[pg.DataContainerERT],
                                np.ndarray[float]
-                            ]:
+]:
     """
     Compute the forward models for the resistivity simulations.
 
