@@ -1,11 +1,6 @@
-# SimPEG functionality
-from simpeg.electromagnetics.static import resistivity as dc
-from simpeg import maps
-from simpeg.utils.solver_utils import DefaultSolverWarning
-
-# discretize functionality
-from discretize import TensorMesh
-from discretize.utils import active_from_xyz
+# pyGIMLi functionality
+import pygimli as pg
+import pygimli.physics.ert as ert
 
 import numpy as np
 from pathlib import Path
@@ -18,12 +13,7 @@ import concurrent.futures
 from functools import partial
 import pickle
 from os import cpu_count
-
-# To suppress warnings DefaultSolverWarning from SimPEG
 import warnings
-warnings.filterwarnings(
-    "ignore", category=DefaultSolverWarning
-)
 
 
 def create_slice(max_length: int,
@@ -223,97 +213,6 @@ def transform(res: float | np.ndarray[float]
         The normalized log resistivity value(s).
     """
     return np.log10(res / 2) / 4
-
-
-def schlumberger_array(nbr_electrodes: int,
-                       electrode_locations: np.ndarray[float],
-                       data_type: str
-                       ) -> list[dc.sources.Dipole]:
-    """
-    Creates a Schlumberger array.
-
-    Parameters
-    ----------
-    nbr_electrodes : int
-        The number of electrodes.
-    electrode_locations : np.ndarray[float]
-        The locations of the electrodes.
-    data_type : str
-        The type of data to collect.
-
-    Returns
-    -------
-    list[dc.sources.Dipole]
-        The list of sources.
-    """
-    source_list: list[dc.sources.Dipole] = []
-    for a in range(1, nbr_electrodes // 2):
-        locations_a: float = electrode_locations[:(-2 * a) - 1]
-        locations_b: float = electrode_locations[(2 * a) + 1:]
-        locations_m: float = electrode_locations[a:-a - 1]
-        locations_n: float = electrode_locations[a + 1:-a]
-        receivers_list_a: list[dc.receivers.Dipole] = [
-            dc.receivers.Dipole(
-                locations_m=loc_m, locations_n=loc_n, data_type=data_type
-            )
-            for loc_m, loc_n in zip(locations_m, locations_n)
-        ]
-        source_list_a: dc.sources.Dipole = [
-            dc.sources.Dipole(
-                receiver_list_a, location_a=loc_a, location_b=loc_b
-            )
-            for receiver_list_a, loc_a, loc_b in zip(
-                receivers_list_a, locations_a, locations_b
-            )
-        ]
-        source_list += source_list_a
-    return source_list
-
-
-def wenner_array(nbr_electrodes: int,
-                 electrode_locations: np.ndarray[float],
-                 data_type: str
-                 ) -> list[dc.sources.Dipole]:
-    """
-    Creates a Wenner array.
-
-    Parameters
-    ----------
-    nbr_electrodes : int
-        The number of electrodes.
-    electrode_locations : np.ndarray[float]
-        The locations of the electrodes.
-    data_type : str
-        The type of data to collect.
-
-    Returns
-    -------
-    list[dc.sources.Dipole]
-        The list of sources.
-    """
-    source_list: list[dc.sources.Dipole] = []
-    for a in range(1, (nbr_electrodes + 3) // 3 + 1):
-        locations_a: float = electrode_locations[:-3 * a:]
-        locations_b: float = electrode_locations[3 * a:]
-        locations_m: float = electrode_locations[a:-2 * a:]
-        locations_n: float = electrode_locations[2 * a:-a]
-        receivers_list_a: list[dc.receivers.Dipole] = [
-            dc.receivers.Dipole(
-                locations_m=loc_m, locations_n=loc_n, data_type=data_type
-            )
-            for loc_m, loc_n in zip(locations_m, locations_n)
-        ]
-        source_list_a: list[dc.sources.Dipole] = [
-            dc.sources.Dipole(
-                receiver_list_a, location_a=loc_a, location_b=loc_b
-            )
-            for receiver_list_a, loc_a, loc_b in zip(
-                receivers_list_a, locations_a, locations_b
-            )
-        ]
-
-        source_list += source_list_a
-    return source_list
 
 
 def compute_active_columns(row: int,
@@ -632,7 +531,7 @@ def flatten_models(resistivity_models: list[np.ndarray[float]]
 
 
 def create_meshes(resistivity_models: list[np.ndarray[float]]
-                  ) -> list[TensorMesh]:
+                  ) -> list[pg.core.Mesh]:
     """
     Create the meshes for the simulations.
 
@@ -643,16 +542,24 @@ def create_meshes(resistivity_models: list[np.ndarray[float]]
 
     Returns
     -------
-    list[TensorMesh]
+    list[pg.core.Mesh]
         The meshes.
     """
     return [
-        TensorMesh(
-            (
-                [(1, resistivity_model.shape[1])],
-                [(1, resistivity_model.shape[0])]
+        pg.createGrid(
+            x=np.linspace(
+                0.,
+                resistivity_model.shape[1],
+                resistivity_model.shape[1] + 1,
+                dtype=np.float64
             ),
-            origin="0N"
+            y=np.linspace(
+                -resistivity_model.shape[0],
+                0,
+                resistivity_model.shape[0] + 1,
+                dtype=np.float64
+            ),
+            worldBoundaryMarker=True,
         )
         for resistivity_model in resistivity_models
     ]
@@ -661,7 +568,7 @@ def create_meshes(resistivity_models: list[np.ndarray[float]]
 def create_surveys(resistivity_models: list[np.ndarray[float]],
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
-                   ) -> list[dc.Survey]:
+                   ) -> list[pg.DataContainerERT]:
     """
     Create the surveys for the simulations.
 
@@ -676,144 +583,57 @@ def create_surveys(resistivity_models: list[np.ndarray[float]],
 
     Returns
     -------
-    list[dc.Survey]
+    list[pg.DataContainerERT]
         The surveys.
     """
-    # Define the measurement data type
-    data_type = "apparent_resistivity"
-
-    surveys: list[dc.Survey] = []
-    for resistivity_model in resistivity_models:
-        # Define electrode locations
-        electrode_locations_x = np.linspace(
-            0, resistivity_model.shape[1], NUM_ELECTRODES
+    return [
+        ert.createData(
+            elecs=np.linspace(
+                0., resistivity_model.shape[0], NUM_ELECTRODES, dtype=float
+            ),
+            schemeName=SCHEME_NAME,
         )
-        electrode_locations_z = np.zeros_like(electrode_locations_x)
-        electrode_locations = np.c_[
-            electrode_locations_x, electrode_locations_z
-        ]
-        if SCHEME_NAME == "wa":
-            array = wenner_array
-        elif SCHEME_NAME == "slm":
-            array = schlumberger_array
-        else:
-            raise NotImplementedError(
-                f"Scheme name {SCHEME_NAME} not implemented."
-            )
-        source_list = array(NUM_ELECTRODES, electrode_locations, data_type)
-        # Define survey
-        surveys.append(dc.Survey(source_list))
-    return surveys
-
-
-def create_topo2ds(resistivity_models: list[np.ndarray[float]]
-                   ) -> list[np.ndarray[float]]:
-    """
-    Create the topography for the simulations.
-
-    Parameters
-    ----------
-    resistivity_models : list[np.ndarray[float]]
-        The resistivity models.
-
-    Returns
-    -------
-    list[np.ndarray[float]]
-        The topographies.
-    """
-    topo_2ds: list[np.ndarray[float]] = []
-    for resistivity_model in resistivity_models:
-        # Create x coordinates
-        x_topo = np.linspace(
-            0, resistivity_model.shape[1], resistivity_model.shape[1]
-        )
-        # We want a flat topography
-        z_topo = np.zeros_like(x_topo)
-        # Create the 2D topography
-        topo_2ds.append(np.c_[x_topo, z_topo])
-    return topo_2ds
-
-
-def create_simulations(surveys: list[dc.Survey],
-                       meshes: list[TensorMesh],
-                       actived_cells_list: list[np.ndarray],
-                       topo_2ds: list[np.ndarray[float]],
-                       resistivity_maps: list[maps.IdentityMap],
-                       verbose: bool,
-                       ) -> list[dc.simulation_2d.Simulation2DNodal]:
-    """
-    Create the simulations for the resistivity models.
-
-    Parameters
-    ----------
-    surveys : list[dc.Survey]
-        The surveys.
-    meshes : list[TensorMesh]
-        The meshes.
-    actived_cells_list : list[np.ndarray]
-        The active cells.
-    topo_2ds : list[np.ndarray[float]]
-        The topographies.
-    resistivity_maps : list[maps.IdentityMap]
-        The resistivity maps.
-    verbose : bool
-        If True, print information about the forward models.
-
-    Returns
-    -------
-    list[dc.simulation_2d.Simulation2DNodal]
-        The simulations.
-    """
-    for survey, mesh, active_cells, topo_2d in zip(
-        surveys, meshes, actived_cells_list, topo_2ds
-    ):
-        survey.drape_electrodes_on_topography(
-            mesh, active_cells, option="top", topography=topo_2d
-        )
-        _ = survey.set_geometric_factor()
-
-    resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal] = [
-        dc.simulation_2d.Simulation2DNodal(
-            mesh, survey=survey, rhoMap=resistivity_map, verbose=verbose, nky=5
-        )
-        for mesh, survey, resistivity_map in zip(
-            meshes, surveys, resistivity_maps
-        )
+        for resistivity_model in resistivity_models
     ]
-    return resistivity_simulations
 
 
-def compute_forward_models(
-        resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal],
-        resistivity_models_flat: list[np.ndarray[float]],
-) -> tuple[list[np.ndarray[float]], np.ndarray[float]]:
+def compute_forward_models(meshes: list[pg.core.Mesh],
+                           resistivity_models: list[np.ndarray[float]],
+                           surveys: list[pg.DataContainerERT],
+                           verbose: bool,
+                           ) -> tuple[
+                               list[pg.DataContainerERT],
+                               np.ndarray[float]
+                            ]:
     """
     Compute the forward models for the resistivity simulations.
 
     Parameters
     ----------
-    resistivity_simulations : list[dc.simulation_2d.Simulation2DNodal]
-        The resistivity simulations.
-    resistivity_models_flat : list[np.ndarray[float]]
-        The flattened resistivity models.
+    meshes : list[pg.core.Mesh]
+        The meshes.
+    resistivity_models : list[np.ndarray[float]]
+        The resistivity models.
+    surveys : list[pg.DataContainerERT]
+        The surveys.
+    verbose : bool
+        If True, print information about the forward models.
 
     Returns
     -------
-    tuple[list[np.ndarray[float]], np.ndarray[float]]
-        The forward models and the time taken to compute them.
+    tuple[list[pg.DataContainerERT], np.ndarray[float]]
+        The forward models and the timer.
     """
-    forward_models: list[np.ndarray[float]] = []
+    forward_models: list[pg.DataContainerERT] = []
     timer_arr: np.ndarray[float] = np.zeros(
-        len(resistivity_simulations), dtype=float
+        len(meshes), dtype=float
     )
-    for idx, (resistivity_simulation, resistivity_model_flat) in enumerate(
-        zip(
-            resistivity_simulations, resistivity_models_flat
-        )
+    for idx, (mesh, resistivity_model, survey) in enumerate(
+        zip(meshes, resistivity_models, surveys)
     ):
         start_time = perf_counter()
-        forward_model = resistivity_simulation.dpred(
-            resistivity_model_flat
+        forward_model = ert.simulate(
+            mesh, res=resistivity_model, scheme=survey, verbose=verbose
         )
         stop_time = perf_counter()
         forward_models.append(forward_model)
@@ -827,7 +647,6 @@ def process_sample(DATA_PATH: Path,
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
                    VERTICAL_FRACTION: float,
-                   AIR_RESISTIVITY: float,
                    resized_lengths: np.ndarray[int],
                    verbose: bool,
                    sample: int,
@@ -853,8 +672,6 @@ def process_sample(DATA_PATH: Path,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
     verbose : bool
@@ -875,6 +692,7 @@ def process_sample(DATA_PATH: Path,
     )
 
     # ----- 2. Extract subsection from the section -----
+
     # The subsection length is randomly chosen between the number of
     # electrodes and the maximum length of the section.
     subsection_length: int = rd.randint(NUM_ELECTRODES, 200)
@@ -898,55 +716,32 @@ def process_sample(DATA_PATH: Path,
     )
 
     # ----- 6. Create a TensorMesh -----
-    meshes: list[TensorMesh] = create_meshes(
+    meshes: list[pg.core.Mesh] = create_meshes(
         resistivity_models
     )
 
     # ----- 7. Create the surveys -----
-    surveys: list[dc.Survey] = create_surveys(
+    surveys: list[pg.DataContainerERT] = create_surveys(
         resistivity_models, NUM_ELECTRODES, SCHEME_NAME
     )
 
-    # ----- 8. Create the topography -----
-    topo_2ds: list[np.ndarray[float]] = create_topo2ds(
-        resistivity_models
-    )
-
-    # ----- 9. Link resistivities to the mesh -----
-    # We activate all cells below the surface
-    actived_cells_list: list[np.ndarray] = [
-        active_from_xyz(mesh, topo_2d)
-        for mesh, topo_2d in zip(meshes, topo_2ds)
-    ]
-    resistivity_maps: list[maps.IdentityMap] = [
-        maps.IdentityMap(mesh, mesh.n_cells)
-        for mesh in meshes
-    ]
-
-    # ----- 10. Create the simulations -----
-    resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal] = \
-        create_simulations(
-            surveys,
+    # ----- 8. Compute the forward models -----
+    forward_models, timers = \
+        compute_forward_models(
             meshes,
-            actived_cells_list,
-            topo_2ds,
-            resistivity_maps,
-            verbose
-    )
+            resistivity_models_flat,
+            surveys,
+            verbose,
+        )
 
-    # ----- 11. Compute the forward models -----
-    forward_models, timers = compute_forward_models(
-        resistivity_simulations, resistivity_models_flat
-    )
-
-    # ----- 12. Recreate Pseudo Sections from Simulation Results -----
+    # ----- 9. Recreate Pseudo Sections from Simulation Results -----
     if SCHEME_NAME == "wa":
         pseudosection = pseudosection_wenner
     elif SCHEME_NAME == "slm":
         pseudosection = pseudosection_schlumberger
 
     pseudosections = [
-        pseudosection(forward_model, NUM_ELECTRODES)
+        pseudosection(forward_model['rhoa'], NUM_ELECTRODES)
         for forward_model in forward_models
     ]
 
@@ -957,7 +752,6 @@ def main(NUM_SAMPLES: int,
          NUM_ELECTRODES: int,
          SCHEME_NAME: str,
          VERTICAL_FRACTION: float,
-         AIR_RESISTIVITY: float,
          DATA_PATH: Path,
          resized_lengths: np.ndarray[int],
          VERBOSE: bool
@@ -979,8 +773,6 @@ def main(NUM_SAMPLES: int,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     DATA_PATH : Path
         Path to the data directory.
     resized_lengths : np.ndarray[int]
@@ -1020,7 +812,6 @@ def main(NUM_SAMPLES: int,
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
             resized_lengths,
             VERBOSE,
             sample,
@@ -1035,7 +826,6 @@ def main_parallel(NUM_SAMPLES: int,
                   NUM_ELECTRODES: int,
                   SCHEME_NAME: str,
                   VERTICAL_FRACTION: float,
-                  AIR_RESISTIVITY: float,
                   DATA_PATH: Path,
                   resized_lengths: np.ndarray,
                   num_max_workers: int,
@@ -1059,8 +849,6 @@ def main_parallel(NUM_SAMPLES: int,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     DATA_PATH : Path
         Path to the data directory.
     resized_lengths : np.ndarray[int]
@@ -1094,7 +882,6 @@ def main_parallel(NUM_SAMPLES: int,
         NUM_ELECTRODES,
         SCHEME_NAME,
         VERTICAL_FRACTION,
-        AIR_RESISTIVITY,
         resized_lengths,
         VERBOSE
     )
@@ -1152,8 +939,6 @@ if __name__ == "__main__":
     VERTICAL_FRACTION: float = args.vertical_fraction
     print(f"Vertical fraction set to {VERTICAL_FRACTION}")
 
-    AIR_RESISTIVITY: float = 1e8
-
     with open(OUTPUT_PATH / "args.txt", "w") as f:
         f.write(f"Data path: {DATA_PATH}\n")
         f.write(f"Number of samples: {NUM_SAMPLES}\n")
@@ -1188,7 +973,6 @@ if __name__ == "__main__":
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
             DATA_PATH,
             resized_lengths,
             MAX_NUM_WORKERS,
@@ -1200,7 +984,6 @@ if __name__ == "__main__":
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
             DATA_PATH,
             resized_lengths,
             VERBOSE
