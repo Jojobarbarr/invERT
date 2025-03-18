@@ -11,7 +11,14 @@ import numpy as np
 from pathlib import Path
 import math
 from time import perf_counter
-from tqdm import tqdm
+
+from pymatsolver import Pardiso
+
+try:
+    from tqdm import tqdm
+    TQDM_INSTALLED: bool = True
+except ModuleNotFoundError:
+    TQDM_INSTALLED: bool = False
 import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
@@ -774,7 +781,7 @@ def create_simulations(surveys: list[dc.Survey],
 
     resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal] = [
         dc.simulation_2d.Simulation2DNodal(
-            mesh, survey=survey, rhoMap=resistivity_map, verbose=verbose, nky=5
+            mesh, survey=survey, rhoMap=resistivity_map, verbose=verbose, solver=Pardiso
         )
         for mesh, survey, resistivity_map in zip(
             meshes, surveys, resistivity_maps
@@ -827,7 +834,6 @@ def process_sample(DATA_PATH: Path,
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
                    VERTICAL_FRACTION: float,
-                   AIR_RESISTIVITY: float,
                    resized_lengths: np.ndarray[int],
                    verbose: bool,
                    sample: int,
@@ -853,8 +859,6 @@ def process_sample(DATA_PATH: Path,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
     verbose : bool
@@ -1010,21 +1014,34 @@ def main(NUM_SAMPLES: int,
     timers_list: list[np.ndarray[float]] = []
     resistivity_models_list: list[np.ndarray[float]] = []
 
-    for sample in tqdm(range(NUM_SAMPLES),
-                       desc="Processing samples",
-                       unit="sample"):
-        pseudosections, timers, resistivity_models = process_sample(
-            DATA_PATH,
-            npz_keys,
-            already_selected,
-            NUM_ELECTRODES,
-            SCHEME_NAME,
-            VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
-            resized_lengths,
-            VERBOSE,
-            sample,
-        )
+    if TQDM_INSTALLED:
+        for sample in tqdm(range(NUM_SAMPLES),
+                           desc="Processing samples",
+                           unit="sample"):
+            pseudosections, timers, resistivity_models = process_sample(
+                DATA_PATH,
+                npz_keys,
+                already_selected,
+                NUM_ELECTRODES,
+                SCHEME_NAME,
+                VERTICAL_FRACTION,
+                resized_lengths,
+                VERBOSE,
+                sample,
+            )
+    else:
+        for sample in range(NUM_SAMPLES):
+            pseudosections, timers, resistivity_models = process_sample(
+                DATA_PATH,
+                npz_keys,
+                already_selected,
+                NUM_ELECTRODES,
+                SCHEME_NAME,
+                VERTICAL_FRACTION,
+                resized_lengths,
+                VERBOSE,
+                sample,
+            )
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
         resistivity_models_list.append(resistivity_models)
@@ -1107,14 +1124,19 @@ def main_parallel(NUM_SAMPLES: int,
         max_workers=num_max_workers
     ) as executor:
         # Using executor.map preserves the order of results.
-        results = list(
-            tqdm(
-                executor.map(process_sample_partial, range(NUM_SAMPLES)),
-                total=NUM_SAMPLES,
-                desc="Processing samples",
-                unit="sample"
+        if TQDM_INSTALLED:
+            results = list(
+                tqdm(
+                    executor.map(process_sample_partial, range(NUM_SAMPLES)),
+                    total=NUM_SAMPLES,
+                    desc="Processing samples",
+                    unit="sample"
+                )
             )
-        )
+        else:
+            results = list(
+                executor.map(process_sample_partial, range(NUM_SAMPLES))
+            )
 
     # Each result is expected to be a tuple (pseudosections, timers)
     for pseudosections, timers, resistivity_models in results:
