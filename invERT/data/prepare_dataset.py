@@ -472,7 +472,7 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
         resized_section.shape
     )
     # Detransform the resistivity values
-    resistivity_model = detransform(norm_log_resistivity_model[-1])
+    resistivity_model = detransform(norm_log_resistivity_model)
     return norm_log_resistivity_model, resistivity_model
 
 
@@ -683,9 +683,9 @@ def main(NUM_SAMPLES: int,
     """
     # Open (or create) an LMDB environment.
     # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open('data.lmdb', map_size=10**9)  # Here, 1GB map size
+    env = lmdb.open('data.lmdb', map_size=20 * 10 ** 9)  # Here, 1GB map size
 
-    batch_size = 10  # Number of samples to store per transaction
+    batch_size = 100  # Number of samples to store per transaction
     buffer = {}
     index = 0
 
