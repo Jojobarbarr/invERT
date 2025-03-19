@@ -698,10 +698,10 @@ def main(NUM_SAMPLES: int,
         multi_array = np.load(file, mmap_mode="r")["arr_0"]
         for section in multi_array:
             sample = process_sample(
-                    section,
-                    VERTICAL_FRACTION,
-                    VERBOSE,
-                )
+                section,
+                VERTICAL_FRACTION,
+                VERBOSE,
+            )
             data = pickle.dumps(sample)
 
             # Use a zero-padded key (as bytes) for ordering
