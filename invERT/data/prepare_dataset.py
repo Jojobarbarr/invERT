@@ -18,7 +18,6 @@ import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
 import pickle
-from os import cpu_count
 
 try:
     from tqdm import tqdm

@@ -16,9 +16,11 @@ from pymatsolver import Pardiso
 
 try:
     from tqdm import tqdm
-    TQDM_INSTALLED: bool = True
 except ModuleNotFoundError:
-    TQDM_INSTALLED: bool = False
+    # If tqdm is not installed, we define a dummy function that just returns
+    # the iterable.
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
 import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
@@ -510,6 +512,16 @@ def parse_input() -> Namespace:
         help="Spacing between electrodes."
     )
     parser.add_argument(
+        "-l",
+        "--lateral_padding",
+        type=int,
+        default=2,
+        help=(
+            "Number of unit to pad the lateral sides of the section. A unit"
+            "is space_between_electrodes pixels."
+        )
+    )
+    parser.add_argument(
         "-sn",
         "--scheme_name",
         type=str,
@@ -668,6 +680,7 @@ def create_meshes(resistivity_models: list[np.ndarray[float]]
 def create_surveys(resistivity_models: list[np.ndarray[float]],
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
+                   LATERAL_PADDING: np.ndarray[int],
                    ) -> list[dc.Survey]:
     """
     Create the surveys for the simulations.
@@ -680,6 +693,8 @@ def create_surveys(resistivity_models: list[np.ndarray[float]],
         The number of electrodes.
     SCHEME_NAME : str
         The name of the scheme.
+    LATERAL_PADDING : np.ndarray[int]
+        The number of pixels to pad the lateral sides of the section.
 
     Returns
     -------
@@ -690,10 +705,14 @@ def create_surveys(resistivity_models: list[np.ndarray[float]],
     data_type = "apparent_resistivity"
 
     surveys: list[dc.Survey] = []
-    for resistivity_model in resistivity_models:
+    for resistivity_model, lateral_padding in zip(
+        resistivity_models, LATERAL_PADDING
+    ):
         # Define electrode locations
         electrode_locations_x = np.linspace(
-            0, resistivity_model.shape[1], NUM_ELECTRODES
+            lateral_padding,
+            resistivity_model.shape[1] - lateral_padding,
+            NUM_ELECTRODES
         )
         electrode_locations_z = np.zeros_like(electrode_locations_x)
         electrode_locations = np.c_[
@@ -781,7 +800,11 @@ def create_simulations(surveys: list[dc.Survey],
 
     resistivity_simulations: list[dc.simulation_2d.Simulation2DNodal] = [
         dc.simulation_2d.Simulation2DNodal(
-            mesh, survey=survey, rhoMap=resistivity_map, verbose=verbose, solver=Pardiso
+            mesh,
+            survey=survey,
+            rhoMap=resistivity_map,
+            verbose=verbose,
+            solver=Pardiso
         )
         for mesh, survey, resistivity_map in zip(
             meshes, surveys, resistivity_maps
@@ -835,6 +858,7 @@ def process_sample(DATA_PATH: Path,
                    SCHEME_NAME: str,
                    VERTICAL_FRACTION: float,
                    resized_lengths: np.ndarray[int],
+                   LATERAL_PADDING: np.ndarray[int],
                    verbose: bool,
                    sample: int,
                    ) -> tuple[
@@ -861,6 +885,8 @@ def process_sample(DATA_PATH: Path,
         The fraction of the section to keep vertically.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
+    LATERAL_PADDING : np.ndarray[int]
+        The number of pixels to pad the lateral sides of the section.
     verbose : bool
         If True, print information about the forward models.
     sample : int
@@ -908,7 +934,7 @@ def process_sample(DATA_PATH: Path,
 
     # ----- 7. Create the surveys -----
     surveys: list[dc.Survey] = create_surveys(
-        resistivity_models, NUM_ELECTRODES, SCHEME_NAME
+        resistivity_models, NUM_ELECTRODES, SCHEME_NAME, LATERAL_PADDING
     )
 
     # ----- 8. Create the topography -----
@@ -961,9 +987,9 @@ def main(NUM_SAMPLES: int,
          NUM_ELECTRODES: int,
          SCHEME_NAME: str,
          VERTICAL_FRACTION: float,
-         AIR_RESISTIVITY: float,
          DATA_PATH: Path,
          resized_lengths: np.ndarray[int],
+         LATERAL_PADDING: np.ndarray[int],
          VERBOSE: bool
          ) -> tuple[
              list[np.ndarray[float]],
@@ -983,12 +1009,12 @@ def main(NUM_SAMPLES: int,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     DATA_PATH : Path
         Path to the data directory.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
+    LATERAL_PADDING : np.ndarray[int]
+        The number of pixels to pad the lateral sides of the section.
     VERBOSE : bool
         If True, print information about the forward models.
 
@@ -1014,34 +1040,21 @@ def main(NUM_SAMPLES: int,
     timers_list: list[np.ndarray[float]] = []
     resistivity_models_list: list[np.ndarray[float]] = []
 
-    if TQDM_INSTALLED:
-        for sample in tqdm(range(NUM_SAMPLES),
-                           desc="Processing samples",
-                           unit="sample"):
-            pseudosections, timers, resistivity_models = process_sample(
-                DATA_PATH,
-                npz_keys,
-                already_selected,
-                NUM_ELECTRODES,
-                SCHEME_NAME,
-                VERTICAL_FRACTION,
-                resized_lengths,
-                VERBOSE,
-                sample,
-            )
-    else:
-        for sample in range(NUM_SAMPLES):
-            pseudosections, timers, resistivity_models = process_sample(
-                DATA_PATH,
-                npz_keys,
-                already_selected,
-                NUM_ELECTRODES,
-                SCHEME_NAME,
-                VERTICAL_FRACTION,
-                resized_lengths,
-                VERBOSE,
-                sample,
-            )
+    for sample in tqdm(range(NUM_SAMPLES),
+                       desc="Processing samples",
+                       unit="sample"):
+        pseudosections, timers, resistivity_models = process_sample(
+            DATA_PATH,
+            npz_keys,
+            already_selected,
+            NUM_ELECTRODES,
+            SCHEME_NAME,
+            VERTICAL_FRACTION,
+            resized_lengths,
+            LATERAL_PADDING,
+            VERBOSE,
+            sample,
+        )
         pseudosections_list.append(pseudosections)
         timers_list.append(timers)
         resistivity_models_list.append(resistivity_models)
@@ -1052,9 +1065,9 @@ def main_parallel(NUM_SAMPLES: int,
                   NUM_ELECTRODES: int,
                   SCHEME_NAME: str,
                   VERTICAL_FRACTION: float,
-                  AIR_RESISTIVITY: float,
                   DATA_PATH: Path,
                   resized_lengths: np.ndarray,
+                  LATERAL_PADDING: np.ndarray[int],
                   num_max_workers: int,
                   VERBOSE: bool,
 
@@ -1076,12 +1089,12 @@ def main_parallel(NUM_SAMPLES: int,
         The name of the scheme.
     VERTICAL_FRACTION : float
         The fraction of the section to keep vertically.
-    AIR_RESISTIVITY : float
-        The resistivity of the air.
     DATA_PATH : Path
         Path to the data directory.
     resized_lengths : np.ndarray[int]
         The lengths to resize the sections to.
+    LATERAL_PADDING : np.ndarray[int]
+        The number of pixels to pad the lateral sides of the section.
     num_max_workers : int
         The number of workers to use.
     VERBOSE : bool
@@ -1111,8 +1124,8 @@ def main_parallel(NUM_SAMPLES: int,
         NUM_ELECTRODES,
         SCHEME_NAME,
         VERTICAL_FRACTION,
-        AIR_RESISTIVITY,
         resized_lengths,
+        LATERAL_PADDING,
         VERBOSE
     )
 
@@ -1124,19 +1137,14 @@ def main_parallel(NUM_SAMPLES: int,
         max_workers=num_max_workers
     ) as executor:
         # Using executor.map preserves the order of results.
-        if TQDM_INSTALLED:
-            results = list(
-                tqdm(
-                    executor.map(process_sample_partial, range(NUM_SAMPLES)),
-                    total=NUM_SAMPLES,
-                    desc="Processing samples",
-                    unit="sample"
-                )
+        results = list(
+            tqdm(
+                executor.map(process_sample_partial, range(NUM_SAMPLES)),
+                total=NUM_SAMPLES,
+                desc="Processing samples",
+                unit="sample"
             )
-        else:
-            results = list(
-                executor.map(process_sample_partial, range(NUM_SAMPLES))
-            )
+        )
 
     # Each result is expected to be a tuple (pseudosections, timers)
     for pseudosections, timers, resistivity_models in results:
@@ -1168,13 +1176,15 @@ if __name__ == "__main__":
     print(f"Spaces between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}")
     print(f"({len(SPACE_BETWEEN_ELECTRODES_LIST)} forward passes per sample)")
 
+    LATERAL_PADDING: np.ndarray[int] = \
+        args.lateral_padding * SPACE_BETWEEN_ELECTRODES_LIST
+    print(f"Lateral padding set to {LATERAL_PADDING}")
+
     SCHEME_NAME: str = args.scheme_name
     print(f"Scheme name set to {SCHEME_NAME}")
 
     VERTICAL_FRACTION: float = args.vertical_fraction
     print(f"Vertical fraction set to {VERTICAL_FRACTION}")
-
-    AIR_RESISTIVITY: float = 1e8
 
     with open(OUTPUT_PATH / "args.txt", "w") as f:
         f.write(f"Data path: {DATA_PATH}\n")
@@ -1183,6 +1193,7 @@ if __name__ == "__main__":
         f.write(
             f"Pixels between electrodes: {SPACE_BETWEEN_ELECTRODES_LIST}\n"
         )
+        f.write(f"Lateral padding: {LATERAL_PADDING}\n")
         f.write(f"Scheme name: {SCHEME_NAME}\n")
         f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
 
@@ -1200,7 +1211,8 @@ if __name__ == "__main__":
 
     # Calculate total pixels to keep for each spacing.
     resized_lengths: np.ndarray[np.int32] = \
-        (NUM_ELECTRODES - 1) * SPACE_BETWEEN_ELECTRODES_LIST
+        (NUM_ELECTRODES - 1) * SPACE_BETWEEN_ELECTRODES_LIST \
+        + LATERAL_PADDING * 2
 
     if PARALLEL:
         MAX_NUM_WORKERS: int = args.num_max_workers
@@ -1210,9 +1222,9 @@ if __name__ == "__main__":
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
             DATA_PATH,
             resized_lengths,
+            LATERAL_PADDING,
             MAX_NUM_WORKERS,
             VERBOSE
         )
@@ -1222,9 +1234,9 @@ if __name__ == "__main__":
             NUM_ELECTRODES,
             SCHEME_NAME,
             VERTICAL_FRACTION,
-            AIR_RESISTIVITY,
             DATA_PATH,
             resized_lengths,
+            LATERAL_PADDING,
             VERBOSE
         )
 
