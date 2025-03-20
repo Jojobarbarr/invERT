@@ -12,8 +12,6 @@ from pathlib import Path
 import math
 import lmdb
 
-from pymatsolver import Pardiso
-
 import random as rd
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
@@ -440,6 +438,13 @@ def parse_input() -> Namespace:
         action="store_true",
         help="Print information about the forward models."
     )
+    parser.add_argument(
+        "-bs",
+        "--batch_size",
+        type=int,
+        default=100,
+        help="Batch size for writing to the LMDB database."
+    )
     return parser.parse_args()
 
 
@@ -635,8 +640,7 @@ def process_sample(section: np.ndarray[np.int8],
             mesh,
             survey=survey,
             rhoMap=resistivity_map,
-            verbose=VERBOSE,
-            solver=Pardiso
+            verbose=VERBOSE
         )
 
     # ----- 11. Compute the forward models -----
@@ -664,6 +668,8 @@ def process_sample(section: np.ndarray[np.int8],
 def main(NUM_SAMPLES: int,
          VERTICAL_FRACTION: float,
          DATA_PATH: Path,
+         OUTPUT_PATH: Path,
+         BATCH_SIZE: int,
          VERBOSE: bool
          ):
     """
@@ -677,14 +683,15 @@ def main(NUM_SAMPLES: int,
         The fraction of the section to keep vertically.
     DATA_PATH : Path
         Path to the data directory.
+    OUTPUT_PATH : Path
+        Path to the output directory.
     VERBOSE : bool
         If True, print information about the forward models.
     """
     # Open (or create) an LMDB environment.
     # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open('data.lmdb', map_size=20 * 10 ** 9)  # Here, 1GB map size
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=20 * 10 ** 9)
 
-    batch_size = 100  # Number of samples to store per transaction
     buffer = {}
     index = 0
 
@@ -695,7 +702,7 @@ def main(NUM_SAMPLES: int,
     )
     for file in DATA_PATH.glob("*.npz"):
         multi_array = np.load(file, mmap_mode="r")["arr_0"]
-        for section in multi_array:
+        for section_idx, section in enumerate(multi_array):
             sample = process_sample(
                 section,
                 VERTICAL_FRACTION,
@@ -712,10 +719,14 @@ def main(NUM_SAMPLES: int,
             progress_bar.update(1)
 
             # Flush the buffer to LMDB once we have enough samples
-            if len(buffer) >= batch_size:
+            if len(buffer) >= BATCH_SIZE:
                 with env.begin(write=True) as txn:
                     for k, v in buffer.items():
                         txn.put(k, v)
+                print(
+                    f"Flushed buffer ({section_idx + 1} / {len(multi_array)} ;"
+                    f" file {file.name})"
+                )
                 buffer = {}  # Reset buffer after flushing
 
     # Write any remaining samples in the buffer
@@ -760,7 +771,12 @@ def count_samples(DATA_PATH: Path) -> int:
     npz_files = list(DATA_PATH.glob("*.npz"))
     with concurrent.futures.ThreadPoolExecutor() as executor:
         sample_counts = list(
-            executor.map(count_samples_in_file, npz_files)
+            tqdm(
+                executor.map(count_samples_in_file, npz_files),
+                total=len(npz_files),
+                desc="Counting samples",
+                unit="file"
+            )
         )
     return sum(sample_counts)
 
@@ -777,6 +793,9 @@ if __name__ == "__main__":
     VERTICAL_FRACTION: float = args.vertical_fraction
     print(f"Vertical fraction set to {VERTICAL_FRACTION}")
 
+    BATCH_SIZE: int = args.batch_size
+    print(f"Batch size set to {BATCH_SIZE}")
+
     with open(OUTPUT_PATH / "args.txt", "w") as f:
         f.write(f"Data path: {DATA_PATH}\n")
         f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
@@ -789,6 +808,8 @@ if __name__ == "__main__":
         NUM_SAMPLES,
         VERTICAL_FRACTION,
         DATA_PATH,
+        OUTPUT_PATH,
+        BATCH_SIZE,
         VERBOSE
     )
 
