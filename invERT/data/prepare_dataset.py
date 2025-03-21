@@ -972,7 +972,7 @@ if __name__ == "__main__":
             BATCH_SIZE,
             ACTUALISATION,
             VERBOSE
-        ) 
+        )
     else:
         main(
             NUM_SAMPLES,
