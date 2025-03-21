@@ -39,16 +39,13 @@ except ModuleNotFoundError:
 
         def update(self, n=1):
             self.n += n  # Just track progress without displaying anything
-            if self.n % self.mod:
+            if self.n % self.mod == 0:
                 elapsed_time: float = perf_counter() - self.start
                 print(
                     f"Processed {self.n} samples in "
-                    f"{elapsed_time:.2f} seconds ({elapsed_time / self.n:.2f}"
-                    f"s/samples)"
-                )
-                print(
-                    f"Estimated time remaining: "
-                    f"{print_hhmmss(
+                    f"{hhmmss(elapsed_time)} ({elapsed_time / self.n:.2f}"
+                    f"s/samples).\nEstimated time remaining: "
+                    f"{hhmmss(
                         (self.total - self.n) * elapsed_time / self.n
                     )}"
                 )
@@ -65,7 +62,7 @@ warnings.filterwarnings(
 )
 
 
-def print_hhmmss(seconds: float) -> None:
+def hhmmss(seconds: float) -> str:
     """
     Print the time in hours, minutes and seconds.
 
@@ -76,7 +73,10 @@ def print_hhmmss(seconds: float) -> None:
     """
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
-    print(f"{h:.0f}:{m:.0f}:{s:.2f}")
+    h = int(h)
+    m = int(m)
+    s = int(s)
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 
 def create_slice(max_length: int,
@@ -703,9 +703,15 @@ def process_sample(section: np.ndarray[np.int8],
         )
 
     # ----- 11. Compute the forward models -----
-    forward_model = resistivity_simulation.dpred(
-        resistivity_model_flat
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        warnings.simplefilter("ignore", UserWarning)
+        warnings.filterwarnings(
+            "ignore", message="splu converted its input to CSC format"
+        )
+        forward_model = resistivity_simulation.dpred(
+            resistivity_model_flat
+        )
 
     # ----- 12. Recreate Pseudo Sections from Simulation Results -----
     if SCHEME_NAME == "wa":
@@ -752,9 +758,10 @@ def main(NUM_SAMPLES: int,
     VERBOSE : bool
         If True, print information about the forward models.
     """
+    print(f"Starting processing with {BATCH_SIZE} samples per batch.")
     # Open (or create) an LMDB environment.
     # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=20 * 10 ** 9)
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=30 * 10 ** 9)
 
     buffer = {}
     index = 0
@@ -804,6 +811,7 @@ def main(NUM_SAMPLES: int,
             for k, v in buffer.items():
                 txn.put(k, v)
     progress_bar.close()
+    print("Processing complete.")
 
 
 def main_parallel(NUM_SAMPLES: int,
@@ -835,6 +843,7 @@ def main_parallel(NUM_SAMPLES: int,
     VERBOSE : bool
         If True, print information about the forward models.
     """
+    print(f"Starting parallel processing with {BATCH_SIZE} samples per batch.")
     # Open (or create) the LMDB environment.
     env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=10 * 10 ** 9)
     buffer = {}
@@ -961,7 +970,9 @@ if __name__ == "__main__":
             "Verbose mode should not be activated in parallel mode."
         )
 
+    print(f"Counting samples in {DATA_PATH}")
     NUM_SAMPLES: int = count_samples(DATA_PATH)
+    print(f"Number of samples: {NUM_SAMPLES}")
 
     if PARALLEL:
         main_parallel(
