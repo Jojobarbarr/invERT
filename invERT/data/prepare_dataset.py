@@ -17,19 +17,66 @@ from argparse import ArgumentParser, Namespace
 import concurrent.futures
 import pickle
 
+from concurrent.futures import ProcessPoolExecutor
+
+from time import perf_counter
+
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
-    # If tqdm is not installed, we define a dummy function that just returns
-    # the iterable.
-    def tqdm(iterable, *args, **kwargs):
-        return iterable
+    class DummyTqdm:
+        def __init__(self, iterable=None, *args, total=None, **kwargs):
+            self.iterable = iterable
+            self.total = total
+            self.n = 0  # Progress counter
+            self.mod = 1000  # Print progress every self.mod iterations
+            self.start = perf_counter()
+
+        def __iter__(self):
+            if self.iterable is not None:
+                return iter(self.iterable)
+            return iter([])
+
+        def update(self, n=1):
+            self.n += n  # Just track progress without displaying anything
+            if self.n % self.mod:
+                elapsed_time: float = perf_counter() - self.start
+                print(
+                    f"Processed {self.n} samples in "
+                    f"{elapsed_time:.2f} seconds ({elapsed_time / self.n:.2f}"
+                    f"s/samples)"
+                )
+                print(
+                    f"Estimated time remaining: "
+                    f"{print_hhmmss(
+                        (self.total - self.n) * elapsed_time / self.n
+                    )}"
+                )
+
+        def close(self):
+            pass  # No cleanup needed
+
+    tqdm = DummyTqdm
 
 # To suppress warnings DefaultSolverWarning from SimPEG
 import warnings
 warnings.filterwarnings(
     "ignore", category=DefaultSolverWarning
 )
+
+
+def print_hhmmss(seconds: float) -> None:
+    """
+    Print the time in hours, minutes and seconds.
+
+    Parameters
+    ----------
+    seconds : float
+        The time in seconds.
+    """
+    m, s = divmod(seconds, 60)
+    h, m = divmod(m, 60)
+    print(f"{h:.0f}:{m:.0f}:{s:.2f}")
 
 
 def create_slice(max_length: int,
@@ -433,17 +480,29 @@ def parse_input() -> Namespace:
         help="Fraction of the section to keep vertically."
     )
     parser.add_argument(
+        "-bs",
+        "--batch_size",
+        type=int,
+        default=1000,
+        help="Batch size for writing to the LMDB database."
+    )
+    parser.add_argument(
+        "-p",
+        "--parallel",
+        action="store_true",
+        help="Use parallel processing."
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
         help="Print information about the forward models."
     )
     parser.add_argument(
-        "-bs",
-        "--batch_size",
+        "-a",
+        "--actualisation",
         type=int,
-        default=100,
-        help="Batch size for writing to the LMDB database."
+        default=1000,
     )
     return parser.parse_args()
 
@@ -640,7 +699,7 @@ def process_sample(section: np.ndarray[np.int8],
             mesh,
             survey=survey,
             rhoMap=resistivity_map,
-            verbose=VERBOSE
+            verbose=VERBOSE,
         )
 
     # ----- 11. Compute the forward models -----
@@ -670,6 +729,7 @@ def main(NUM_SAMPLES: int,
          DATA_PATH: Path,
          OUTPUT_PATH: Path,
          BATCH_SIZE: int,
+         ACTUALISATION: int,
          VERBOSE: bool
          ):
     """
@@ -685,6 +745,10 @@ def main(NUM_SAMPLES: int,
         Path to the data directory.
     OUTPUT_PATH : Path
         Path to the output directory.
+    BATCH_SIZE : int
+        The batch size for writing to the LMDB database.
+    ACTUALISATION : int
+        The number of samples to process before updating the progress bar.
     VERBOSE : bool
         If True, print information about the forward models.
     """
@@ -700,6 +764,11 @@ def main(NUM_SAMPLES: int,
         desc="Processing samples",
         unit="sample"
     )
+    try:
+        progress_bar.mod = ACTUALISATION
+    except NameError:
+        pass
+
     for file in DATA_PATH.glob("*.npz"):
         multi_array = np.load(file, mmap_mode="r")["arr_0"]
         for section_idx, section in enumerate(multi_array):
@@ -735,6 +804,87 @@ def main(NUM_SAMPLES: int,
             for k, v in buffer.items():
                 txn.put(k, v)
     progress_bar.close()
+
+
+def main_parallel(NUM_SAMPLES: int,
+                  VERTICAL_FRACTION: float,
+                  DATA_PATH: Path,
+                  OUTPUT_PATH: Path,
+                  BATCH_SIZE: int,
+                  ACTUALISATION: int,
+                  VERBOSE: bool):
+    """
+    Process samples in parallel using ProcessPoolExecutor.
+    Sections are read and processed on the fly to avoid loading everything
+    into memory. LMDB writes are done in batches in the main process.
+
+    Parameters
+    ----------
+    NUM_SAMPLES : int
+        The number of samples to generate.
+    VERTICAL_FRACTION : float
+        The fraction of the section to keep vertically.
+    DATA_PATH : Path
+        Path to the data directory.
+    OUTPUT_PATH : Path
+        Path to the output directory.
+    BATCH_SIZE : int
+        The batch size for writing to the LMDB database.
+    ACTUALISATION : int
+        The number of samples to process before updating the progress bar.
+    VERBOSE : bool
+        If True, print information about the forward models.
+    """
+    # Open (or create) the LMDB environment.
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=10 * 10 ** 9)
+    buffer = {}
+    index = 0
+
+    progress_bar = tqdm(
+        total=NUM_SAMPLES, desc="Processing samples", unit="sample"
+    )
+    try:
+        progress_bar.mod = ACTUALISATION
+    except NameError:
+        pass
+
+    for file in DATA_PATH.glob("*.npz"):
+        multi_array = np.load(file, mmap_mode="r")["arr_0"]
+        with ProcessPoolExecutor() as executor:
+            # Process sections in parallel
+            futures = {
+                executor.submit(
+                    process_sample, section, VERTICAL_FRACTION, VERBOSE
+                ): section_idx
+                for section_idx, section in enumerate(multi_array)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                sample = future.result()
+                data = pickle.dumps(sample)
+                key = f"{index:08d}".encode('ascii')
+                buffer[key] = data
+                index += 1
+
+                # Update progress bar
+                progress_bar.update(1)
+
+                # Flush buffer to LMDB when batch size is reached
+                if len(buffer) >= BATCH_SIZE:
+                    with env.begin(write=True) as txn:
+                        for k, v in buffer.items():
+                            txn.put(k, v)
+                    print(
+                        f"Flushed buffer;"
+                        f" file {file.name})"
+                    )
+                    buffer.clear()  # Reset buffer after writing
+
+    # Write any remaining samples in the buffer.
+    if buffer:
+        with env.begin(write=True) as txn:
+            for k, v in buffer.items():
+                txn.put(k, v)
+    print("Processing complete.")
 
 
 def count_samples_in_file(filename: Path) -> int:
@@ -796,24 +946,40 @@ if __name__ == "__main__":
     BATCH_SIZE: int = args.batch_size
     print(f"Batch size set to {BATCH_SIZE}")
 
+    PARALLEL: bool = args.parallel
+
+    ACTUALISATION: int = args.actualisation
+
     with open(OUTPUT_PATH / "args.txt", "w") as f:
         f.write(f"Data path: {DATA_PATH}\n")
         f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
 
     VERBOSE: bool = args.verbose
 
+    if VERBOSE and PARALLEL:
+        warnings.warn(
+            "Verbose mode should not be activated in parallel mode."
+        )
+
     NUM_SAMPLES: int = count_samples(DATA_PATH)
 
-    pseudosections, timers, resistivity_models = main(
-        NUM_SAMPLES,
-        VERTICAL_FRACTION,
-        DATA_PATH,
-        OUTPUT_PATH,
-        BATCH_SIZE,
-        VERBOSE
-    )
-
-    np.save(OUTPUT_PATH / "pseudosections.npy", np.array(pseudosections))
-    np.save(OUTPUT_PATH / "timers.npy", timers)
-    with open(OUTPUT_PATH / "resistivity_models.pkl", "wb") as f:
-        pickle.dump(resistivity_models, f)
+    if PARALLEL:
+        main_parallel(
+            NUM_SAMPLES,
+            VERTICAL_FRACTION,
+            DATA_PATH,
+            OUTPUT_PATH,
+            BATCH_SIZE,
+            ACTUALISATION,
+            VERBOSE
+        ) 
+    else:
+        main(
+            NUM_SAMPLES,
+            VERTICAL_FRACTION,
+            DATA_PATH,
+            OUTPUT_PATH,
+            BATCH_SIZE,
+            ACTUALISATION,
+            VERBOSE
+        )
