@@ -1,10 +1,70 @@
 import logging
+import lmdb
+import pickle
 from torch import cat, randint, rand, Tensor, flip, sin, cos
+import torch
 # from torch.functional import F
 from torch.utils.data import Dataset, DataLoader, random_split
-
+from pathlib import Path
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+
+
+class LMDBDataset(Dataset):
+    def __init__(self, lmdb_path: Path):
+        # Open the LMDB environment in read-only mode.
+        self.env = lmdb.open(
+            str(lmdb_path),
+            readonly=True,
+            lock=False,
+            readahead=False,
+            meminit=False
+        )
+        # Retrieve the total number of entries.
+        with self.env.begin() as txn:
+            self.length = txn.stat()['entries']
+            print(f"Found {self.length} samples in the LMDB dataset.")
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        # Build the key as used during saving (zero-padded).
+        key = f"{index:08d}".encode('ascii')
+        with self.env.begin() as txn:
+            data = txn.get(key)
+        return pickle.loads(data)
+
+    def split(self,
+              test_split: float,
+              val_split: float = 0):
+        return random_split(self,
+                            [int((1 - test_split - val_split) * len(self)),
+                             int(test_split * len(self)),
+                                int(val_split * len(self))])
+
+
+def lmdb_custom_collate_fn(batch):
+    """
+    Custom collate function to handle batches with heterogeneous items.
+
+    Each item in batch is a tuple: (int, int, str, np.ndarray, np.ndarray).
+    For fields with varying shapes (the numpy arrays), we keep them as lists.
+    For the other items, you can choose to stack or keep as is.
+    """
+    num_electrodes, subsection_lengths, scheme_names, \
+        pseudosections, norm_log_resistivity_models = zip(*batch)
+
+    num_electrodes = torch.tensor(num_electrodes, dtype=torch.int64)
+    subsection_lengths = torch.tensor(subsection_lengths, dtype=torch.int64)
+
+    return (
+        num_electrodes,
+        subsection_lengths,
+        scheme_names,
+        pseudosections,
+        norm_log_resistivity_models
+    )
 
 
 class CustomDataset(Dataset):
@@ -260,6 +320,10 @@ def generate_data(num_samples: int,
         val_data.append((val_data_chunk, val_target_chunk))
 
     return data, val_data
+
+
+def pre_process_data_lmdb(dataloader: DataLoader):
+    pass
 
 
 def pre_process_data(data: list[tuple[Tensor, Tensor]],

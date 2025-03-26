@@ -1,7 +1,7 @@
 {
   "experiment": {
     "experiment_name": {
-      "value": "small_ref_test",
+      "value": "true_data_test",
       "type": "string",
     },
     "output_folder": {
@@ -62,18 +62,19 @@
     },
   },
   "dataset": {
+    "dataset_name": {
+      "value": "../output_lmbd_1000/data.lmdb",
+      "type": "string",
+    },
+    // if dataset_name is "_generated", the following parameters are used to generate the dataset
     "num_samples": {
-      "value": 65536,
+      "value": 16384,
       "type": "int",
     },
     // num_sub_group must be a divisor of num_samples
     "num_sub_group": {
       "value": 4,
       "type": "int",
-    },
-    "dataset_name": {
-      "value": "_generated",
-      "type": "string",
     },
     "data_min_size": {
       "value": 10,
@@ -88,7 +89,6 @@
       "type": "float",
     },
     // Be careful as the total sample generated or used is num_samples * (1 + test_split + validation_split)
-
     "test_split": {
       "value": 0.1,
       "type": "float",
@@ -97,7 +97,7 @@
       "value": 0.1,
       "type": "float",
     },
-    // Batch size must be a divisor of num_samples
+    // Batch size must be a divisor of num_samples (if dataset_name is "_generated")
     "batch_size": {
       "value": 64,
       "type": "int",
@@ -111,7 +111,7 @@
   "model": {
     "mlp": {
       "input_metadata_dim": {
-        "value": 2,
+        "value": 3,
         "type": "int",
       },
       "hidden_dims": [64],

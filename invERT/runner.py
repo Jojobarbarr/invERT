@@ -15,38 +15,38 @@ from config.configuration import Config
 from model.models import DynamicModel
 from pathlib import Path
 from model.train import train, print_model_results
-from data.data import generate_data, pre_process_data, initialize_datasets
+from data.data import (
+    generate_data,
+    pre_process_data,
+    initialize_datasets,
+    LMDBDataset,
+    lmdb_custom_collate_fn
+    pre_process_data_lmdb
+)
 import matplotlib.pyplot as plt
 import multiprocessing as mp
 from model.parameters_classes import TestingParameters
 
 
-def init_data(config: Config):
-    dataset_config: Config = config.dataset
+def init_gen_data(dataset_config: Config):
+    # The dataset is generated
+    num_samples: int = dataset_config.num_samples
+    num_sub_groups: int = dataset_config.num_sub_group
+    data_min_size: int = dataset_config.data_min_size
+    data_max_size: int = dataset_config.data_max_size
+    noise: float = dataset_config.noise
 
-    if dataset_config.dataset_name == "_generated":
-        # The dataset is generated
-        num_samples: int = dataset_config.num_samples
-        num_sub_groups: int = dataset_config.num_sub_group
-        data_min_size: int = dataset_config.data_min_size
-        data_max_size: int = dataset_config.data_max_size
-        noise: float = dataset_config.noise
-
-        num_samples = int(num_samples * (1 + dataset_config.test_split))
-        num_val_samples = int(num_samples * dataset_config.validation_split)
-        data, val_data = generate_data(
-            num_samples,
-            num_sub_groups,
-            data_min_size,
-            data_max_size,
-            noise,
-            num_val_samples
-        )
-    else:
-        # The dataset is loaded
-        raise NotImplementedError("Loading a dataset is not implemented yet.")
-
-    max_input_shape: int = config.dataset.data_max_size
+    num_samples = int(num_samples * (1 + dataset_config.test_split))
+    num_val_samples = int(num_samples * dataset_config.validation_split)
+    data, val_data = generate_data(
+        num_samples,
+        num_sub_groups,
+        data_min_size,
+        data_max_size,
+        noise,
+        num_val_samples
+    )
+    max_input_shape: int = dataset_config.data_max_size
     data, target, min_data, max_data, min_target, max_target = \
         pre_process_data(data)
     val_data, val_target, _, _, _, _ = pre_process_data(val_data)
@@ -62,12 +62,12 @@ def init_data(config: Config):
             max_target)
 
 
-def init_dataloaders(config: Config,
-                     data: list[Tensor],
-                     val_data: list[Tensor],
-                     target: list[Tensor],
-                     val_target: list[Tensor],
-                     ) -> tuple[list[DataLoader]]:
+def init_gen_dataloaders(config: Config,
+                         data: list[Tensor],
+                         val_data: list[Tensor],
+                         target: list[Tensor],
+                         val_target: list[Tensor],
+                         ) -> tuple[list[DataLoader]]:
     dataset_config: Config = config.dataset
     batch_size: int = dataset_config.batch_size
     batch_mixture: int = dataset_config.batch_mixture
@@ -160,10 +160,13 @@ def init_scheduler(config: Config,
 
 
 def init_logging(config: Config,
-                 train_dataloaders: list[DataLoader]
+                 train_dataloaders: list[DataLoader] | DataLoader
                  ) -> tuple[int, int, int]:
     logging_config: Config = config.logging
-    nb_batches: int = len(train_dataloaders[0])
+    if isinstance(train_dataloaders, DataLoader):
+        nb_batches: int = len(train_dataloaders)
+    else:
+        nb_batches: int = len(train_dataloaders[0])
     nb_print_points: int = logging_config.print_points
     # Calculate the batch_index at which to print
     print_points: int = nb_batches // logging_config.print_points
@@ -225,12 +228,49 @@ def main(config: Config):
     print(f"Using device: {device}")
 
     # Initialize data
-    data, val_data, target, val_target, input_max_shape, min_data, max_data, \
-        min_target, max_target = init_data(config)
+    if config.dataset.dataset_name == "_generated":
+        data, val_data, target, val_target, input_max_shape, min_data, \
+            max_data, min_target, max_target = init_gen_data(config)
+        # Initialize dataloaders
+        train_dataloaders, test_dataloaders, val_dataloaders = \
+            init_gen_dataloaders(config, data, val_data, target, val_target)
+    else:
+        dataset_config: Config = config.dataset
+        dataset: LMDBDataset = LMDBDataset(Path(dataset_config.dataset_name))
+        dataloader: DataLoader = DataLoader(
+            dataset,
+            batch_size=512,
+            shuffle=True,
+            num_workers=8,
+            collate_fn=lmdb_custom_collate_fn,
+        )
+        pre_process_data_lmdb(dataloader)
 
-    # Initialize dataloaders
-    train_dataloaders, test_dataloaders, val_dataloaders = \
-        init_dataloaders(config, data, val_data, target, val_target)
+        train_dataset, test_dataset, val_dataset = dataset.split(
+            dataset_config.test_split,
+            dataset_config.validation_split
+        )
+        train_dataloaders: DataLoader = DataLoader(
+            train_dataset,
+            batch_size=dataset_config.batch_size,
+            shuffle=True,
+            num_workers=8,
+            collate_fn=lmdb_custom_collate_fn,
+        )
+        test_dataloaders: DataLoader = DataLoader(
+            test_dataset,
+            batch_size=dataset_config.batch_size,
+            shuffle=True,
+            num_workers=8,
+            collate_fn=lmdb_custom_collate_fn,
+        )
+        val_dataloaders: DataLoader = DataLoader(
+            val_dataset,
+            batch_size=dataset_config.batch_size,
+            shuffle=True,
+            num_workers=8,
+            collate_fn=lmdb_custom_collate_fn,
+        )
 
     # Training initalization
     training_config: Config = config.training

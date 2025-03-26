@@ -111,8 +111,8 @@ def process_mini_batch(model: DynamicModel,
 
 def process_batch(model: DynamicModel,
                   batch: int,
-                  train_dataloaders: list[DataLoader],
-                  test_dataloaders: list[DataLoader],
+                  train_dataloaders: list[DataLoader] | DataLoader,
+                  test_dataloaders: list[DataLoader] | DataLoader,
                   optimizer: Optimizer,
                   criterion: Module,
                   input_max_shape: int,
@@ -124,6 +124,8 @@ def process_batch(model: DynamicModel,
     # Initialize the batch loss value
     batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
 
+    if isinstance(train_dataloaders, DataLoader):
+        train_dataloaders = [train_dataloaders]
     for train_dataloader in train_dataloaders:
         # Accumulate the loss value for the mini-batch
         batch_loss_value += process_mini_batch(model,
@@ -166,8 +168,8 @@ def process_batch(model: DynamicModel,
 
 def process_epoch(model: DynamicModel,
                   nb_batches: int,
-                  train_dataloaders: list[DataLoader],
-                  test_dataloaders: list[DataLoader],
+                  train_dataloaders: list[DataLoader] | DataLoader,
+                  test_dataloaders: list[DataLoader] | DataLoader,
                   optimizer: Optimizer,
                   criterion: Module,
                   input_max_shape: int,
@@ -197,8 +199,8 @@ def process_epoch(model: DynamicModel,
 def train(model: DynamicModel,
           epochs: int,
           nb_batches: int,
-          train_dataloaders: list[DataLoader],
-          test_dataloaders: list[DataLoader],
+          train_dataloaders: list[DataLoader] | DataLoader,
+          test_dataloaders: list[DataLoader] | DataLoader,
           optimizer: Optimizer,
           criterion: Module,  # Loss function
           input_max_shape: int,
