@@ -23,7 +23,7 @@ def process_batch(batch: tuple[torch.Tensor,
                       npt.NDArray[np.int32],
                       dict[str, npt.NDArray[np.float64]],
                       dict[str, npt.NDArray[np.uint64]]
-                  ]:
+]:
     """
     Process a single batch: determine array types and depth levels.
 
