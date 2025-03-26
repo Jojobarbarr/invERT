@@ -38,9 +38,10 @@ class LMDBDataset(Dataset):
     def split(self,
               test_split: float,
               val_split: float = 0):
-        return random_split(self, [int((1 - test_split - val_split) * len(self)),
-                                   int(test_split * len(self)),
-                                   int(val_split * len(self))])
+        return random_split(self,
+                            [int((1 - test_split - val_split) * len(self)),
+                             int(test_split * len(self)),
+                                int(val_split * len(self))])
 
 
 def lmdb_custom_collate_fn(batch):
@@ -323,7 +324,6 @@ def generate_data(num_samples: int,
 
 def pre_process_data_lmdb(dataloader: DataLoader):
     pass
-
 
 
 def pre_process_data(data: list[tuple[Tensor, Tensor]],
