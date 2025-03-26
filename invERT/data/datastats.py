@@ -145,7 +145,8 @@ def compute_stats(arr: np.ndarray
 
 
 def compute_pseudo_section_stats(dataloader: DataLoader,
-                                 dataset: LMDBDataset
+                                 dataset: LMDBDataset,
+                                 lmdb_path: Path
                                  ) -> None:
     """
     Compute and log pseudo section statistics from the data batches.
@@ -245,6 +246,9 @@ def compute_pseudo_section_stats(dataloader: DataLoader,
             f"std of number of depth levels: {stat[3]:.2f}"
         )
 
+    np.save(lmdb_path / "rho_app_means_wa.npy", rho_app_means["wa"])
+    np.save(lmdb_path / "rho_app_means_slm.npy", rho_app_means["slm"])
+
     for array, stat in stats.items():
         plt.hist(
             depth_levels_dict[array],
@@ -302,7 +306,7 @@ def main(lmdb_path: Path
         num_workers=8,
         collate_fn=lmdb_custom_collate_fn,
     )
-    compute_pseudo_section_stats(dataloader, dataset)
+    compute_pseudo_section_stats(dataloader, dataset, lmdb_path)
 
 
 def parse_args() -> Namespace:

@@ -5,13 +5,13 @@ from torch import cat, randint, rand, Tensor, flip, sin, cos
 import torch
 # from torch.functional import F
 from torch.utils.data import Dataset, DataLoader, random_split
-
+from pathlib import Path
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
 
 class LMDBDataset(Dataset):
-    def __init__(self, lmdb_path):
+    def __init__(self, lmdb_path: Path):
         # Open the LMDB environment in read-only mode.
         self.env = lmdb.open(
             str(lmdb_path),
@@ -34,6 +34,13 @@ class LMDBDataset(Dataset):
         with self.env.begin() as txn:
             data = txn.get(key)
         return pickle.loads(data)
+
+    def split(self,
+              test_split: float,
+              val_split: float = 0):
+        return random_split(self, [int((1 - test_split - val_split) * len(self)),
+                                   int(test_split * len(self)),
+                                   int(val_split * len(self))])
 
 
 def lmdb_custom_collate_fn(batch):
@@ -312,6 +319,11 @@ def generate_data(num_samples: int,
         val_data.append((val_data_chunk, val_target_chunk))
 
     return data, val_data
+
+
+def pre_process_data_lmdb(dataloader: DataLoader):
+    pass
+
 
 
 def pre_process_data(data: list[tuple[Tensor, Tensor]],
