@@ -6,16 +6,29 @@ import torch
 # from torch.functional import F
 from torch.utils.data import Dataset, DataLoader, random_split
 from pathlib import Path
+from typing import NewType
+import numpy.typing as npt
+import numpy as np
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
+invERTbatch = NewType(
+    'invERTbatch',
+    tuple[
+        Tensor,
+        Tensor,
+        tuple[str],
+        tuple[npt.NDArray[np.float64]],
+        tuple[npt.NDArray[np.float64]]
+    ]
+)
 
 class LMDBDataset(Dataset):
-    def __init__(self, lmdb_path: Path):
-        # Open the LMDB environment in read-only mode.
+    def __init__(self, lmdb_path: Path, read_only: bool = True):
+        # Open the LMDB environment.
         self.env = lmdb.open(
             str(lmdb_path),
-            readonly=True,
+            readonly=read_only,
             lock=False,
             readahead=False,
             meminit=False
@@ -23,7 +36,7 @@ class LMDBDataset(Dataset):
         # Retrieve the total number of entries.
         with self.env.begin() as txn:
             self.length = txn.stat()['entries']
-            print(f"Found {self.length} samples in the LMDB dataset.")
+            print(f"Found {self.length} samples in the LMDB dataset ({lmdb_path}).")
 
     def __len__(self):
         return self.length
@@ -33,15 +46,32 @@ class LMDBDataset(Dataset):
         key = f"{index:08d}".encode('ascii')
         with self.env.begin() as txn:
             data = txn.get(key)
-        return pickle.loads(data)
+        return index, pickle.loads(data)
+
+    # def __setitem__(self, indices, batch):
+    #     for idx, val in zip(indices, zip(*batch)):
+    #         with self.env.begin(write=True) as txn:
+    #             # print(f"Item {idx} in LMDB dataset was {self[idx][1]}.")
+    #             # print(f"Setting item {idx} in LMDB dataset to {val}.")
+    #             key = f"{idx:08d}".encode("ascii")
+    #             data = pickle.dumps(val)
+    #             txn.replace(key, data)
 
     def split(self,
               test_split: float,
               val_split: float = 0):
-        return random_split(self,
-                            [int((1 - test_split - val_split) * len(self)),
-                             int(test_split * len(self)),
-                                int(val_split * len(self))])
+        return random_split(
+            self,
+            [
+                int((1 - test_split - val_split) * len(self)),
+                int(test_split * len(self)),
+                int(val_split * len(self))
+            ]
+        )
+    
+    def close(self):
+        self.env.close()
+    
 
 
 def lmdb_custom_collate_fn(batch):
@@ -52,19 +82,20 @@ def lmdb_custom_collate_fn(batch):
     For fields with varying shapes (the numpy arrays), we keep them as lists.
     For the other items, you can choose to stack or keep as is.
     """
+    indices, data = zip(*batch)
     num_electrodes, subsection_lengths, scheme_names, \
-        pseudosections, norm_log_resistivity_models = zip(*batch)
-
-    num_electrodes = torch.tensor(num_electrodes, dtype=torch.int64)
-    subsection_lengths = torch.tensor(subsection_lengths, dtype=torch.int64)
+        pseudosections, norm_log_resistivity_models = zip(*data)
 
     return (
-        num_electrodes,
-        subsection_lengths,
-        scheme_names,
-        pseudosections,
-        norm_log_resistivity_models
-    )
+        indices, (
+            num_electrodes,
+            subsection_lengths,
+            scheme_names,
+            pseudosections,
+            norm_log_resistivity_models
+            )
+        )
+        
 
 
 class CustomDataset(Dataset):

@@ -761,7 +761,7 @@ def main(NUM_SAMPLES: int,
     print(f"Starting processing with {BATCH_SIZE} samples per batch.")
     # Open (or create) an LMDB environment.
     # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=30 * 10 ** 9)
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB 
 
     buffer = {}
     index = 0

@@ -8,7 +8,7 @@ from data import LMDBDataset, lmdb_custom_collate_fn
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import torch.multiprocessing as mp
-from collections import defaultdict
+from collections import defaultdict, Counter
 mp.set_sharing_strategy('file_system')
 
 
@@ -79,6 +79,14 @@ def process_batch(batch: tuple[torch.Tensor,
         array: np.zeros((max_depth,), dtype=np.float64)
         for array, max_depth in max_depths.items()
     }
+    rho_app_maxs: dict[str, npt.NDArray[np.float64]] = {
+        array: np.zeros((max_depth,), dtype=np.float64)
+        for array, max_depth in max_depths.items()
+    }
+    rho_app_mins: dict[str, npt.NDArray[np.float64]] = {
+        array: np.zeros((max_depth,), dtype=np.float64)
+        for array, max_depth in max_depths.items()
+    }
     num_pixels: dict[str, npt.NDArray[np.uint64]] = {
         array: np.zeros((max_depth,), dtype=np.uint64)
         for array, max_depth in max_depths.items()
@@ -102,6 +110,14 @@ def process_batch(batch: tuple[torch.Tensor,
         row_sums_sq[array_type][: pseudosection.shape[0]] += np.nansum(
             pseudosection ** 2, axis=1
         )
+        rho_app_maxs[array_type][: pseudosection.shape[0]] = np.maximum(
+            rho_app_maxs[array_type][: pseudosection.shape[0]],
+            np.nanmax(pseudosection, axis=1),
+        )
+        rho_app_mins[array_type][: pseudosection.shape[0]] = np.minimum(
+            rho_app_mins[array_type][: pseudosection.shape[0]],
+            np.nanmin(pseudosection, axis=1),
+        )
         row_counts[array_type][: pseudosection.shape[0]] += valid_mask.sum(
             axis=1, dtype=np.uint64
         )
@@ -122,9 +138,65 @@ def process_batch(batch: tuple[torch.Tensor,
         depth_levels,
         rho_app_means,
         rho_app_sq_sums,
+        rho_app_maxs,
+        rho_app_mins,
         num_pixels,
     )
 
+
+def giga_flatten(dataloader: DataLoader,
+                 nb_pixels: dict[str, npt.NDArray[np.uint64]],
+                 max_depth: dict[str, int],
+                 lmdb_path: Path
+                 ):
+    flattened: dict[str, list[list[npt.NDArray]]] = {
+        array: [[] for _ in range(max_depth[array])]
+        for array in nb_pixels
+    }
+    for batch in tqdm(dataloader, total=len(dataloader), unit="batch", desc="Flattening batches"):
+        for idx, pseudosection in enumerate(batch[3]):
+            array = batch[2][idx]
+            for row_idx, row in enumerate(pseudosection):
+                valid_mask = ~np.isnan(row)
+                flattened[array][row_idx].append(row[valid_mask])
+
+    save_path = lmdb_path / "flattened"
+    save_path.mkdir(exist_ok=True, parents=True)
+
+    bins = 50
+    # Save histograms for each depth level
+    for array, max_depth in max_depth.items():
+        all_data = np.concatenate([np.concatenate(flattened[array][row_idx]) for row_idx in range(max_depth) if flattened[array][row_idx]])
+
+        # Get global x-axis range
+        global_xmin, global_xmax = all_data.min(), all_data.max()
+
+        # Get global y-axis max (density normalization)
+        global_max_count = 0
+        for row_idx in range(max_depth):
+            if flattened[array][row_idx]:  # Avoid empty levels
+                counts, _ = np.histogram(np.concatenate(flattened[array][row_idx]), bins=bins, density=True)
+                global_max_count = max(global_max_count, counts.max())
+
+        for row_idx in tqdm(reversed(range(max_depth)), total=max_depth, unit="depth level", desc=f"Saving histograms for {array}"):
+            data = np.concatenate(flattened[array][row_idx])
+            plt.hist(
+                data,
+                bins=bins,
+                alpha=0.5,
+                density=True,
+                label=f"{array} - Depth level {row_idx}"
+            )
+            plt.legend(loc="upper right")
+            plt.xlabel("Apparent resistivity")
+            plt.ylabel("Frequency")
+            plt.title(f"Apparent resistivity distribution for {array} DP: {row_idx}")
+
+            plt.xlim(global_xmin, global_xmax)
+            plt.ylim(0, global_max_count)
+
+            plt.savefig(save_path / f"app_res_{array}_DP_{row_idx}.png")
+            plt.close()
 
 def compute_stats(arr: np.ndarray
                   ) -> tuple[np.int32, np.int32, np.float64, np.float64]:
@@ -146,7 +218,8 @@ def compute_stats(arr: np.ndarray
 
 def compute_pseudo_section_stats(dataloader: DataLoader,
                                  dataset: LMDBDataset,
-                                 lmdb_path: Path
+                                 lmdb_path: Path,
+                                 plot: bool = False
                                  ) -> None:
     """
     Compute and log pseudo section statistics from the data batches.
@@ -178,6 +251,14 @@ def compute_pseudo_section_stats(dataloader: DataLoader,
         array: np.zeros((max_depth,), dtype=np.float64)
         for array, max_depth in max_depths.items()
     }
+    rho_app_maxs: dict[str, list[float]] = {
+        array: np.zeros((max_depth,), dtype=np.float64)
+        for array, max_depth in max_depths.items()
+    }
+    rho_app_mins: dict[str, list[float]] = {
+        array: np.zeros((max_depth,), dtype=np.float64)
+        for array, max_depth in max_depths.items()
+    }
     num_pixels: dict[str, list[float]] = {
         array: np.zeros((max_depth,), dtype=np.uint64)
         for array, max_depth in max_depths.items()
@@ -186,8 +267,30 @@ def compute_pseudo_section_stats(dataloader: DataLoader,
     for batch_idx, batch in tqdm(
         enumerate(dataloader), total=len(dataloader), unit="batch"
     ):
-        array_type, depth_level, rho_app_means_batch, \
-            rho_app_sq_sum, num_pixels_batch = process_batch(batch)
+        print(f"type(batch): {type(batch)}")
+        print(f"type(batch[0]): {type(batch[0])}")
+        print(f"type(batch[1]): {type(batch[1])}")
+        print(f"type(batch[2]): {type(batch[2])}")
+        print(f"type(batch[3]): {type(batch[3])}")
+        print(f"type(batch[4]): {type(batch[4])}")
+        print(f"type(batch[0][0]): {type(batch[0][0])}")
+        print(f"type(batch[1][0]): {type(batch[1][0])}")
+        print(f"type(batch[2][0]): {type(batch[2][0])}")
+        print(f"type(batch[3][0]): {type(batch[3][0])}")
+        print(f"type(batch[4][0]): {type(batch[4][0])}")
+        print(f"type(batch[3][0][0]): {type(batch[3][0][0])}")
+        print(f"type(batch[4][0][0]): {type(batch[4][0][0])}")
+        print(f"type(batch[3][0][0][0]): {type(batch[3][0][0][0])}")
+        print(f"type(batch[4][0][0][0]): {type(batch[4][0][0][0])}")
+        (
+            array_type,
+            depth_level,
+            rho_app_means_batch,
+            rho_app_sq_sum,
+            rho_app_max,
+            rho_app_min,
+            num_pixels_batch
+        ) = process_batch(batch)
 
         start = batch_idx * dataloader.batch_size
         end = start + len(array_type)
@@ -207,6 +310,14 @@ def compute_pseudo_section_stats(dataloader: DataLoader,
             )
             rho_app_sq_sums[array][valid_rows] += \
                 rho_app_sq_sum[array][valid_rows]
+            rho_app_maxs[array][valid_rows] = np.maximum(
+                rho_app_maxs[array][valid_rows],
+                rho_app_max[array][valid_rows]
+            )
+            rho_app_mins[array][valid_rows] = np.minimum(
+                rho_app_mins[array][valid_rows],
+                rho_app_min[array][valid_rows]
+            )
             num_pixels[array][valid_rows] += \
                 num_pixel_batch[valid_rows]
 
@@ -248,47 +359,72 @@ def compute_pseudo_section_stats(dataloader: DataLoader,
 
     np.save(lmdb_path / "rho_app_means_wa.npy", rho_app_means["wa"])
     np.save(lmdb_path / "rho_app_means_slm.npy", rho_app_means["slm"])
+    np.save(lmdb_path / "rho_app_maxs_wa.npy", rho_app_maxs["wa"])
+    np.save(lmdb_path / "rho_app_maxs_slm.npy", rho_app_maxs["slm"])
+    np.save(lmdb_path / "rho_app_mins_wa.npy", rho_app_mins["wa"])
+    np.save(lmdb_path / "rho_app_mins_slm.npy", rho_app_mins["slm"])
 
-    for array, stat in stats.items():
-        plt.hist(
-            depth_levels_dict[array],
-            bins=np.arange(stat[0], stat[1] + 2),
-            alpha=0.5,
-            label=array
-        )
-    plt.legend(loc="upper right")
-    plt.xlabel("Depth levels")
-    plt.ylabel("Frequency")
-    plt.title("Depth level distribution")
-    plt.show()
+    if plot:
+        for array, stat in stats.items():
+            plt.hist(
+                depth_levels_dict[array],
+                bins=np.arange(stat[0], stat[1] + 2),
+                alpha=0.5,
+                label=array
+            )
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Frequency")
+        plt.title("Depth level distribution")
+        plt.show()
 
-    for array, max_depth in max_depths.items():
-        plt.bar(range(max_depth), rho_app_means[array], alpha=0.5, label=array)
+        for array, max_depth in max_depths.items():
+            plt.bar(range(max_depth), rho_app_means[array], alpha=0.5, label=array)
 
-    plt.legend(loc="upper right")
-    plt.xlabel("Depth levels")
-    plt.ylabel("Mean apparent resistivity")
-    plt.title("Mean apparent resistivity distribution")
-    plt.show()
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Mean apparent resistivity")
+        plt.title("Mean apparent resistivity distribution")
+        plt.show()
 
-    for array, max_depth in max_depths.items():
-        plt.bar(range(max_depth), rho_app_stds[array], alpha=0.5, label=array)
-    plt.legend(loc="upper right")
-    plt.xlabel("Depth levels")
-    plt.ylabel("Standard deviation")
-    plt.title("Standard deviation distribution")
-    plt.show()
+        for array, max_depth in max_depths.items():
+            plt.bar(range(max_depth), rho_app_stds[array], alpha=0.5, label=array)
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Standard deviation")
+        plt.title("Standard deviation distribution")
+        plt.show()
 
-    for array, max_depth in max_depths.items():
-        plt.bar(range(max_depth), num_pixels[array], alpha=0.5, label=array)
-    plt.legend(loc="upper right")
-    plt.xlabel("Depth levels")
-    plt.ylabel("Number of pixels")
-    plt.title("Number of pixels distribution")
-    plt.show()
+        for array, max_depth in max_depths.items():
+            plt.bar(range(max_depth), num_pixels[array], alpha=0.5, label=array)
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Number of pixels")
+        plt.title("Number of pixels distribution")
+        plt.show()
+
+        for array, max_depth in max_depths.items():
+            plt.bar(range(max_depth), rho_app_maxs[array], alpha=0.5, label=array)
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Maximum apparent resistivity")
+        plt.title("Maximum apparent resistivity distribution")
+        plt.show()
+
+        for array, max_depth in max_depths.items():
+            plt.bar(range(max_depth), rho_app_mins[array], alpha=0.5, label=array)
+        plt.legend(loc="upper right")
+        plt.xlabel("Depth levels")
+        plt.ylabel("Minimum apparent resistivity")
+        plt.title("Minimum apparent resistivity distribution")
+        plt.show()
+    
+    plt.close("all")
+
+    giga_flatten(dataloader, num_pixels, max_depths, lmdb_path)
 
 
-def main(lmdb_path: Path
+def main(lmdb_path: Path, plot: bool = False
          ) -> None:
     """
     Main function to load the dataset and compute pseudo section statistics.
@@ -306,7 +442,7 @@ def main(lmdb_path: Path
         num_workers=8,
         collate_fn=lmdb_custom_collate_fn,
     )
-    compute_pseudo_section_stats(dataloader, dataset, lmdb_path)
+    compute_pseudo_section_stats(dataloader, dataset, lmdb_path, plot)
 
 
 def parse_args() -> Namespace:
@@ -324,10 +460,16 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "lmdb_path", type=Path, help="Path to the LMDB dataset"
     )
+    parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        help="Plot statistics"
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     print("invERT: Computing pseudo section statistics...")
     args = parse_args()
-    main(args.lmdb_path)
+    main(args.lmdb_path, args.plot)
