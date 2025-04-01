@@ -9,6 +9,8 @@ import numpy.typing as npt
 import torch.multiprocessing as mp
 import lmdb
 from torch.utils.data import DataLoader
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
@@ -57,6 +59,7 @@ def write_to_lmdb(txn: lmdb.Transaction,
         key = f"{sample_idx:08d}".encode("ascii")
         data = pickle.dumps(values)
         txn.put(key, data)
+        del data
 
 
 def pre_transfrom(dataloader: DataLoader,
@@ -97,7 +100,6 @@ def pre_transfrom(dataloader: DataLoader,
                     new_batch = daT.shift(new_batch, rho_app_min)
                 if args.log:
                     new_batch = daT.log_transform(new_batch)
-
                 write_to_lmdb(txn, sample_indices, new_batch)
         env.close()
     else:
@@ -105,6 +107,49 @@ def pre_transfrom(dataloader: DataLoader,
             "Skipping pre-transformations as the processed LMDB dataset already exists.\n"
             "If you want to recompute the pre-transformations, use '-c' or '--copy'."
         )
+
+
+def post_transfrom(dataloader: DataLoader,
+                  lmdb_path: Path,
+                  old_lmdb_path: Path,
+                  flattened: dict[str, list[npt.NDArray]],
+                  arrays: tuple[str],
+                  args: Namespace,
+                  ) -> None:
+    """
+    Pre-transforms the pseudo sections in the dataset.
+
+    Parameters
+    ----------
+    dataloader: DataLoader
+        DataLoader containing the LMDB dataset.
+    lmdb_path: Path
+        Path to the LMDB dataset.
+    old_lmdb_path: Path
+        Path to the old LMDB dataset.
+    flattened: dict[str, list[npt.NDArray]]
+        Dictionary containing the flattened pseudo sections for each array.
+    arrays: tuple[str]
+        Tuple containing the array names.
+    args: Namespace
+        Parsed command-line arguments.
+    
+    Returns
+    -------
+    None
+    """
+    if (lmdb_path / 'data.lmdb').exists():
+        rmtree(lmdb_path / 'data.lmdb')
+    max_value: dict[str, float] = {array: max(np.max(rho_app_row) for rho_app_row in flattened[array]) for array in arrays}
+    env = lmdb.open(str(lmdb_path / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB
+    description = f"Post-transforming and writing to LMDB copy"
+    with env.begin(write=True) as txn:
+        for sample_indices, batch in tqdm(dataloader, desc=description, unit="batch"):
+            new_batch = batch
+            new_batch = daT.normalize(new_batch, max_value)
+            write_to_lmdb(txn, sample_indices, new_batch)
+    env.close()
+    rmtree(old_lmdb_path / 'data.lmdb')
 
 
 def plot_means(rho_app_means: dict[str, npt.NDArray[np.float64]],
@@ -148,7 +193,81 @@ def plot_means(rho_app_means: dict[str, npt.NDArray[np.float64]],
         plt.legend()
         plt.grid(axis='y', linestyle="--", alpha=0.5)
         plt.savefig(save_path / f"mean_app_res_{array}{'_log' if args.log else ''}.png")
-        plt.show()
+        plt.close()
+
+
+def plot_hist_per_depth(flattened: dict[str, list[npt.NDArray]],
+                        max_depth: dict[str, int],
+                        arrays: tuple[str],
+                        lmdb_path: Path,
+                        args: Namespace
+                        ) -> None:
+    """
+    Plots the histogram of the apparent resistivity values for each depth level.
+    Parameters
+    ----------
+    flattened: dict[str, list[npt.NDArray]]
+        Dictionary containing the flattened pseudo sections for each array.
+    arrays: tuple[str]
+        Tuple containing the array names.
+    lmdb_path: Path
+        Path to the LMDB dataset.
+    args: Namespace
+        Parsed command-line arguments.
+    Returns
+    -------
+    None
+    """
+    num_bins = 100
+    save_path = lmdb_path / "plot" / "histograms"
+    save_path_zoom = save_path / "zoom"
+    save_path.mkdir(exist_ok=True)
+    save_path_zoom.mkdir(exist_ok=True)
+    min_value: dict[str, float] = {array: min(np.min(rho_app_row) for rho_app_row in flattened[array]) for array in arrays}
+    max_value: dict[str, float] = {array: max(np.max(rho_app_row) for rho_app_row in flattened[array]) for array in arrays}
+    for array in arrays:
+        array_data = flattened[array]
+        num_levels = len(array_data)
+        bins = np.linspace(min_value[array], max_value[array], num_bins + 1)
+        bins_zoom = np.linspace(min_value[array], 10000, num_bins + 1)
+        counts = [np.histogram(depth_level, bins=bins, density=True)[0] for depth_level in array_data]
+        max_count = max(count.max() for count in counts)
+        for depth_level in tqdm(range(num_levels), desc=f"Plotting histograms for {array}", unit="depth level"):
+            plt.hist(
+                array_data[depth_level],
+                bins=bins,
+                alpha=1,
+                density=True,
+                label=f"Depth level {depth_level}",
+            )
+            plt.xlabel("Apparent resistivity")
+            plt.ylabel("Frequency")
+            plt.title(f"Histogram of apparent resistivity values for {array} at depth level {depth_level}")
+            plt.legend()
+            plt.grid(axis='y', linestyle="--", alpha=0.5)
+            plt.xlim(min_value[array], max_value[array])
+            plt.ylim(0, max_count)
+            plt.savefig(save_path / f"histogram_{array}_depth_{depth_level}{'_log' if args.log else ''}.png")
+            plt.close()
+
+            plt.hist(
+                array_data[depth_level],
+                bins=bins_zoom,
+                alpha=1,
+                density=True,
+                label=f"Depth level {depth_level}",
+            )
+            plt.xlabel("Apparent resistivity")
+            plt.ylabel("Frequency")
+            plt.title(f"Histogram of apparent resistivity values for {array} at depth level {depth_level}")
+            plt.legend()
+            plt.grid(axis='y', linestyle="--", alpha=0.5)
+            plt.xlim(min_value[array], 10000)
+            plt.ylim(0, 0.0002)
+            plt.savefig(save_path_zoom / f"histogram_{array}_depth_{depth_level}{'_log' if args.log else ''}.png")
+            plt.close()
+
+
 
 
 def process_data(dataloader: DataLoader,
@@ -157,13 +276,15 @@ def process_data(dataloader: DataLoader,
                  rho_app_sums_squared: dict[str, list[npt.NDArray[np.float64]]],
                  rho_app_counts: dict[str, list[npt.NDArray[np.int64]]],
                  min_depths: dict[str, list[int]],
-                 max_depths: dict[str, list[int]]
+                 max_depths: dict[str, list[int]],
+                 flattened: dict[str, list[npt.NDArray]]
                  ) -> tuple[
                      dict[str, list[npt.NDArray[np.float64]]],
                      dict[str, list[npt.NDArray[np.float64]]],
                      dict[str, list[npt.NDArray[np.int64]]],
                      dict[str, list[int]],
-                     dict[str, list[int]]
+                     dict[str, list[int]],
+                     dict[str, list[npt.NDArray]]
                  ]:
     """
     Processes the data to compute the pseudo section statistics.
@@ -184,6 +305,8 @@ def process_data(dataloader: DataLoader,
         Dictionary containing the minimum depth for each array.
     max_depths: dict[str, list[int]]
         Dictionary containing the maximum depth for each array.
+    flattened: dict[str, list[npt.NDArray]]
+        Dictionary containing the flattened pseudo sections for each array.
 
     Returns
     -------
@@ -192,37 +315,45 @@ def process_data(dataloader: DataLoader,
         dict[str, list[npt.NDArray[np.float64]]],
         dict[str, list[npt.NDArray[np.int64]]],
         dict[str, list[int]],
-        dict[str, list[int]]
+        dict[str, list[int]],
+        dict[str, list[npt.NDArray]]
     ]
         Tuple containing the updated dictionaries
         for the sum of the apparent resistivity values,
         the sum of the squared apparent resistivity values,
         the count of the apparent resistivity values,
-        the minimum depth, and the maximum
-        depth for each array.
+        the minimum depth, the maximum depth,
+        and the flattened pseudo sections for each array.
     """
     for _, batch in tqdm(dataloader, desc="Computing statistics", unit="batch"):
-        sums = daT.compute_sum(batch)
-        min_d = daT.compute_min_depth(batch, arrays)
-        max_d = daT.compute_max_depth(batch, arrays)
+        sums: tuple[
+            list[npt.NDArray[np.float64]],
+            list[npt.NDArray[np.float64]],
+            list[npt.NDArray[np.int64]]
+        ] = daT.compute_sum(batch)
+        min_d: dict[str, int] = daT.compute_min_depth(batch, arrays)
+        max_d: dict[str, int] = daT.compute_max_depth(batch, arrays)
+        flatteneds: dict[str, list[npt.NDArray]] = daT.append_by_row(batch, arrays)
         array_b = batch[2]
         for array in arrays:
             mask = (np.array(array_b) == array)
             rho_app_sums[array].extend(sum_ for sum_, good in zip(sums[0], mask) if good)
             rho_app_sums_squared[array].extend(sum_squared for sum_squared, good in zip(sums[1], mask) if good)
             rho_app_counts[array].extend(count for count, good in zip(sums[2], mask) if good)
-
-            not_nan = [~np.isnan(ps) for ps in batch[3]]
-
-            flattened[array].append(ps[not_nan] for ps in batch[3] if array_b == array
-
+                                
             min_depths[array].append(min_d[array])
             max_depths[array].append(max_d[array])
-    return rho_app_sums, rho_app_sums_squared, rho_app_counts, min_depths, max_depths
+
+            flattened[array] = [
+                prev if actual is None else actual if prev is None
+                else np.concatenate((prev, actual), axis=0)
+                for prev, actual in zip_longest(flattened[array], flatteneds[array], fillvalue=None)
+            ]
+        
+    return rho_app_sums, rho_app_sums_squared, rho_app_counts, min_depths, max_depths, flattened
 
 
-def post_process_data(dataloader: DataLoader,
-                      arrays: tuple[str],
+def post_process_data(arrays: tuple[str],
                       rho_app_sums: dict[str, list[npt.NDArray[np.float64]]],
                       rho_app_sums_squared: dict[str, list[npt.NDArray[np.float64]]],
                       rho_app_counts: dict[str, list[npt.NDArray[np.int64]]],
@@ -240,8 +371,6 @@ def post_process_data(dataloader: DataLoader,
 
     Parameters
     ----------
-    dataloader: DataLoader
-        DataLoader containing the LMDB dataset.
     arrays: tuple[str]
         Tuple containing the array names.
     rho_app_sums: dict[str, list[npt.NDArray[np.float64]]]
@@ -339,12 +468,11 @@ def compute_stats(dataloader: DataLoader,
         rho_app_counts: list[npt.NDArray[np.int64]] = {array: [] for array in arrays}
         min_depths: dict[str, list[int]] = {array: [] for array in arrays}
         max_depths: dict[str, list[int]] = {array: [] for array in arrays}
-        flattened: dict[str, list[list[npt.NDArray]]] = {
-            array: [[] for _ in range(max_depth[array])]
-            for array in arrays
+        flattened: dict[str, list[npt.NDArray]] = {
+            array: [] for array in arrays
         }
 
-        rho_app_sums, rho_app_sums_squared, rho_app_counts, min_depths, max_depths = \
+        rho_app_sums, rho_app_sums_squared, rho_app_counts, min_depths, max_depths, flattened = \
             process_data(
                 dataloader,
                 arrays,
@@ -352,13 +480,13 @@ def compute_stats(dataloader: DataLoader,
                 rho_app_sums_squared,
                 rho_app_counts,
                 min_depths,
-                max_depths
+                max_depths,
+                flattened
             )
 
         
         rho_app_sum, rho_app_sum_squared, rho_app_count, min_depth, max_depth = \
             post_process_data(
-                dataloader,
                 arrays,
                 rho_app_sums,
                 rho_app_sums_squared,
@@ -376,6 +504,8 @@ def compute_stats(dataloader: DataLoader,
 
         pickle.dump(rho_app_means, open(save_path / "rho_app_means.pkl", "wb"))
         pickle.dump(rho_app_stds, open(save_path / "rho_app_stds.pkl", "wb"))
+        pickle.dump(flattened, open(save_path / "flattened.pkl", "wb"))
+        pickle.dump((min_depth, max_depth), open(save_path / "min_max_depth.pkl", "wb"))
 
     else:
         print(
@@ -384,8 +514,24 @@ def compute_stats(dataloader: DataLoader,
         )
         rho_app_means = pickle.load(open(lmdb_path / "stats" / "rho_app_means.pkl", "rb"))
         rho_app_stds = pickle.load(open(lmdb_path / "stats" / "rho_app_stds.pkl", "rb"))
+        flattened = pickle.load(open(lmdb_path / "stats" / "flattened.pkl", "rb"))
+        min_depth, max_depth = pickle.load(open(lmdb_path / "stats" / "min_max_depth.pkl", "rb"))
 
     plot_means(rho_app_means, rho_app_stds, arrays, lmdb_path, args)
+    plot_hist_per_depth(flattened, max_depth, arrays, lmdb_path, args)
+
+    plt.close('all')
+
+    final_data_path = lmdb_path.parent.parent / f"{lmdb_path.parent.stem}_post"
+    final_data_path.mkdir(exist_ok=True)
+    post_transfrom(
+        dataloader,
+        final_data_path,
+        lmdb_path,
+        flattened,
+        arrays,
+        args
+    )
 
 def main(args: Namespace,
          arrays: tuple[str]
@@ -403,14 +549,18 @@ def main(args: Namespace,
     None
     """
     lmdb_path = args.lmdb_path
+    dataset: LMDBDataset = LMDBDataset(lmdb_path)
+
+    
     proc_lmdb_path: Path = lmdb_path.parent.parent / f"{lmdb_path.parent.stem}_proc"
     proc_lmdb_path.mkdir(exist_ok=True)
-    dataset: LMDBDataset = LMDBDataset(lmdb_path)
+
     dataloader: DataLoader = DataLoader(
         dataset,
         batch_size=512,
         shuffle=False,
         num_workers=8,
+        prefetch_factor=8,
         collate_fn=lmdb_custom_collate_fn,
     )
     pre_transfrom(dataloader, proc_lmdb_path, arrays, args)
@@ -423,9 +573,10 @@ def main(args: Namespace,
         batch_size=512,
         shuffle=False,
         num_workers=8,
+        prefetch_factor=4,
         collate_fn=lmdb_custom_collate_fn,
     )
-    compute_stats(dataloader, proc_lmdb_path.parent, args)
+    compute_stats(dataloader, proc_lmdb_path, args)
 
 
 def parse_args() -> Namespace:
@@ -466,6 +617,12 @@ def parse_args() -> Namespace:
         "--log",
         action="store_true",
         help="Log transforms the pseudo sections."
+    )
+    parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        help="Plot the pseudo section statistics."
     )
     return parser.parse_args()
 

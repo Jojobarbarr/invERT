@@ -154,6 +154,10 @@ def giga_flatten(dataloader: DataLoader,
         for array in nb_pixels
     }
     for batch in tqdm(dataloader, total=len(dataloader), unit="batch", desc="Flattening batches"):
+        valid_mask = ~np.isnan(batch[3])
+        arrays, pseudosections = batch[2], batch[3]
+        for array, pseudosection in zip(arrays, pseudosections):
+            [flattened[array][row_idx].append(row[~np.isnan(row)]) for row_idx, row in enumerate(pseudosection)]
         for idx, pseudosection in enumerate(batch[3]):
             array = batch[2][idx]
             for row_idx, row in enumerate(pseudosection):

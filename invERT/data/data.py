@@ -30,7 +30,7 @@ class LMDBDataset(Dataset):
             str(lmdb_path),
             readonly=read_only,
             lock=False,
-            readahead=False,
+            readahead=True,
             meminit=False
         )
         # Retrieve the total number of entries.
