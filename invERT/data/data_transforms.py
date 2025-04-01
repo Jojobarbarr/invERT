@@ -38,7 +38,7 @@ def log_transform(batch: invERTbatch,
             print(f"Warning caught in log_transform: {e}")
             print(f"Problematic values: {invalid_values}")
             log_pseudosections.append(ps)  # Retourne la pseudo-section inchangée si erreur
-    return (num_electrodes, subsection_lengths, scheme_names, log_pseudosections, norm_log_resistivity_models)
+    return (num_electrodes, subsection_lengths, scheme_names, tuple(log_pseudosections), norm_log_resistivity_models)
 
 
 def shift(batch: invERTbatch,
@@ -60,7 +60,7 @@ def shift(batch: invERTbatch,
         Batch of data containing the shifted pseudosections.
     """
     num_electrodes, subsection_lengths, scheme_names, pseudosections, norm_log_resistivity_models = batch
-    shifted_pseudosections = (np.where(~np.isnan(ps), ps - rho_app_mins[array][:len(ps)][:, None], ps) for ps, array in zip(pseudosections, scheme_names))
+    shifted_pseudosections = tuple((np.where(~np.isnan(ps), ps - rho_app_mins[array][:len(ps)][:, None], ps) for ps, array in zip(pseudosections, scheme_names)))
     return (num_electrodes, subsection_lengths, scheme_names, shifted_pseudosections, norm_log_resistivity_models)
 
 
@@ -83,7 +83,7 @@ def normalize(batch: invERTbatch,
         Batch of data containing the normalized pseudosections.
     """
     num_electrodes, subsection_lengths, scheme_names, pseudosections, norm_log_resistivity_models = batch
-    normalized_pseudosections = (np.where(~np.isnan(ps), ps / max_value[array], ps) for ps, array in zip(pseudosections, scheme_names))
+    normalized_pseudosections = tuple((np.where(~np.isnan(ps), ps / max_value[array], ps) for ps, array in zip(pseudosections, scheme_names)))
     return (num_electrodes, subsection_lengths, scheme_names, normalized_pseudosections, norm_log_resistivity_models)
 
 

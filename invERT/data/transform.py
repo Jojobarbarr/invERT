@@ -59,7 +59,6 @@ def write_to_lmdb(txn: lmdb.Transaction,
         key = f"{sample_idx:08d}".encode("ascii")
         data = pickle.dumps(values)
         txn.put(key, data)
-        del data
 
 
 def pre_transfrom(dataloader: DataLoader,
@@ -138,18 +137,22 @@ def post_transfrom(dataloader: DataLoader,
     -------
     None
     """
+    print("testing")
     if (lmdb_path / 'data.lmdb').exists():
         rmtree(lmdb_path / 'data.lmdb')
+    print(f"ok, removed {lmdb_path / 'data.lmdb'}")
     max_value: dict[str, float] = {array: max(np.max(rho_app_row) for rho_app_row in flattened[array]) for array in arrays}
+    print("maxx")
     env = lmdb.open(str(lmdb_path / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB
+    print("env")
     description = f"Post-transforming and writing to LMDB copy"
     with env.begin(write=True) as txn:
+        print("txn")
         for sample_indices, batch in tqdm(dataloader, desc=description, unit="batch"):
             new_batch = batch
             new_batch = daT.normalize(new_batch, max_value)
             write_to_lmdb(txn, sample_indices, new_batch)
     env.close()
-    rmtree(old_lmdb_path / 'data.lmdb')
 
 
 def plot_means(rho_app_means: dict[str, npt.NDArray[np.float64]],
@@ -513,14 +516,19 @@ def compute_stats(dataloader: DataLoader,
             "If you want to recompute the statistics, use '-r' or '--recompute'."
         )
         rho_app_means = pickle.load(open(lmdb_path / "stats" / "rho_app_means.pkl", "rb"))
+        print(f"Loaded rho_app_means.pkl")
         rho_app_stds = pickle.load(open(lmdb_path / "stats" / "rho_app_stds.pkl", "rb"))
+        print(f"Loaded rho_app_stds.pkl")
         flattened = pickle.load(open(lmdb_path / "stats" / "flattened.pkl", "rb"))
+        print(f"Loaded flattened.pkl")
         min_depth, max_depth = pickle.load(open(lmdb_path / "stats" / "min_max_depth.pkl", "rb"))
+        print(f"Loaded min_max_depth.pkl")
 
-    plot_means(rho_app_means, rho_app_stds, arrays, lmdb_path, args)
-    plot_hist_per_depth(flattened, max_depth, arrays, lmdb_path, args)
+    if args.plot:
+        plot_means(rho_app_means, rho_app_stds, arrays, lmdb_path, args)
+        plot_hist_per_depth(flattened, max_depth, arrays, lmdb_path, args)
 
-    plt.close('all')
+        plt.close('all')
 
     final_data_path = lmdb_path.parent.parent / f"{lmdb_path.parent.stem}_post"
     final_data_path.mkdir(exist_ok=True)
