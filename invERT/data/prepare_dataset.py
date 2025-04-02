@@ -13,6 +13,7 @@ import math
 import lmdb
 
 import random as rd
+import sys
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
 import pickle
@@ -196,8 +197,8 @@ def resize(sample: np.ndarray[np.int8],
     return resized_array
 
 
-def detransform(log_res: float | np.ndarray[float]
-                ) -> float | np.ndarray[float]:
+def detransform(log_res: float | np.ndarray[np.float16]
+                ) -> float | np.ndarray[np.float16]:
     """
     Maps a normalized log resistivity value to a resistivity value.
 
@@ -206,19 +207,19 @@ def detransform(log_res: float | np.ndarray[float]
 
     Parameters
     ----------
-    log_res : float or np.ndarray[float]
+    log_res : float or np.ndarray[np.float16]
         The normalized log resistivity value(s).
 
     Returns
     -------
-    float or np.ndarray[float]
+    float or np.ndarray[np.float16]
         The resistivity value(s).
     """
     return 2 * 10 ** (4 * log_res)
 
 
 def schlumberger_array(nbr_electrodes: int,
-                       electrode_locations: np.ndarray[float],
+                       electrode_locations: np.ndarray[np.float16],
                        data_type: str
                        ) -> list[dc.sources.Dipole]:
     """
@@ -228,7 +229,7 @@ def schlumberger_array(nbr_electrodes: int,
     ----------
     nbr_electrodes : int
         The number of electrodes.
-    electrode_locations : np.ndarray[float]
+    electrode_locations : np.ndarray[np.float16]
         The locations of the electrodes.
     data_type : str
         The type of data to collect.
@@ -263,7 +264,7 @@ def schlumberger_array(nbr_electrodes: int,
 
 
 def wenner_array(nbr_electrodes: int,
-                 electrode_locations: np.ndarray[float],
+                 electrode_locations: np.ndarray[np.float16],
                  data_type: str
                  ) -> list[dc.sources.Dipole]:
     """
@@ -273,7 +274,7 @@ def wenner_array(nbr_electrodes: int,
     ----------
     nbr_electrodes : int
         The number of electrodes.
-    electrode_locations : np.ndarray[float]
+    electrode_locations : np.ndarray[np.float16]
         The locations of the electrodes.
     data_type : str
         The type of data to collect.
@@ -342,23 +343,23 @@ def compute_active_columns(row: int,
     return col_start, col_end
 
 
-def pseudosection_schlumberger(rhoa: list[float],
+def pseudosection_schlumberger(rhoa: list[np.float16],
                                nbr_electrodes: int
-                               ) -> np.ndarray[float]:
+                               ) -> np.ndarray[np.float16]:
     """
     Creates a pseudo section from a forward model result using a Schlumberger
     array.
 
     Parameters
     ----------
-    rhoa : list[float]
+    rhoa : list[np.float16]
         The apparent resistivity values.
     nbr_electrodes : int
         The number of electrodes.
 
     Returns
     -------
-    np.ndarray[float]
+    np.ndarray[np.float16]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -369,8 +370,8 @@ def pseudosection_schlumberger(rhoa: list[float],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[float] = np.empty(
-        (num_rows, num_cols), dtype=float)
+    pseudo_section: np.ndarray[np.float16] = np.empty(
+        (num_rows, num_cols), dtype=np.float16)
     pseudo_section.fill(np.nan)
 
     # Fill the pseudo section with the apparent resistivity values.
@@ -387,22 +388,22 @@ def pseudosection_schlumberger(rhoa: list[float],
     return pseudo_section
 
 
-def pseudosection_wenner(rhoa: list[float],
+def pseudosection_wenner(rhoa: list[np.float16],
                          nbr_electrodes: int
-                         ) -> np.ndarray[float]:
+                         ) -> np.ndarray[np.float16]:
     """
     Creates a pseudo section from a forward model result using a Wenner array.
 
     Parameters
     ----------
-    rhoa : list[float]
+    rhoa : list[np.float16]
         The apparent resistivity values.
     nbr_electrodes : int
         The number of electrodes.
 
     Returns
     -------
-    np.ndarray[float]
+    np.ndarray[np.float16]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -423,8 +424,8 @@ def pseudosection_wenner(rhoa: list[float],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[float] = np.empty(
-        (num_rows, num_cols), dtype=float)
+    pseudo_section: np.ndarray[np.float16] = np.empty(
+        (num_rows, num_cols), dtype=np.float16)
     pseudo_section.fill(np.nan)
 
     value_index: int = 0
@@ -508,8 +509,8 @@ def parse_input() -> Namespace:
 
 
 def assign_resistivity(resized_section: np.ndarray[np.int8],
-                       ) -> tuple[np.ndarray[float],
-                                  np.ndarray[float]]:
+                       ) -> tuple[np.ndarray[np.float16],
+                                  np.ndarray[np.float16]]:
     """
     Assign resistivity values to the resized sections.
 
@@ -522,15 +523,15 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
 
     Returns
     -------
-    tuple[np.ndarray[float], np.ndarray[float]]
+    tuple[np.ndarray[np.float16], np.ndarray[np.float16]]
         The normalized log resistivity model and the resistivity model.
     """
     # Extract the rock classes from the original section
     rock_classes, inv = np.unique(resized_section, return_inverse=True)
     # Create a random normalized log resistivity value for each rock class
-    norm_log_res_values: np.ndarray[float] = np.random.uniform(
+    norm_log_res_values: np.ndarray[np.float16] = np.random.uniform(
         0, 1, size=len(rock_classes)
-    )
+    ).astype(np.float16)
     norm_log_resistivity_model = norm_log_res_values[inv].reshape(
         resized_section.shape
     )
@@ -539,7 +540,7 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
     return norm_log_resistivity_model, resistivity_model
 
 
-def create_surveys(resistivity_model: np.ndarray[float],
+def create_surveys(resistivity_model: np.ndarray[np.float16],
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
                    LATERAL_PADDING: int,
@@ -549,7 +550,7 @@ def create_surveys(resistivity_model: np.ndarray[float],
 
     Parameters
     ----------
-    resistivity_model : np.ndarray[float]
+    resistivity_model : np.ndarray[np.float16]
         The resistivity model.
     NUM_ELECTRODES : int
         The number of electrodes.
@@ -570,7 +571,8 @@ def create_surveys(resistivity_model: np.ndarray[float],
     electrode_locations_x = np.linspace(
         LATERAL_PADDING,
         resistivity_model.shape[1] - LATERAL_PADDING,
-        NUM_ELECTRODES
+        NUM_ELECTRODES,
+        dtype=np.float16,
     )
     electrode_locations_z = np.zeros_like(electrode_locations_x)
     electrode_locations = np.c_[
@@ -596,8 +598,8 @@ def process_sample(section: np.ndarray[np.int8],
                        int,
                        int,
                        str,
-                       np.ndarray[float],
-                       np.ndarray[float]
+                       np.ndarray[np.float16],
+                       np.ndarray[np.float16]
 ]:
     """
     Process a sample.
@@ -619,8 +621,8 @@ def process_sample(section: np.ndarray[np.int8],
         int,
         int,
         str,
-        np.ndarray[float],
-        np.ndarray[float]
+        np.ndarray[np.float16],
+        np.ndarray[np.float16]
     ]
         The number of electrodes, the subsection length, the scheme name, the
         pseudo section and the normalized log resistivity model.
@@ -636,12 +638,12 @@ def process_sample(section: np.ndarray[np.int8],
     LATERAL_PADDING: int = 2
     LATERAL_PADDING *= space_between_electrodes
     # Resized length
-    resized_length: int = (NUM_ELECTRODES - 1) + 2 * LATERAL_PADDING
+    resized_length: int = (NUM_ELECTRODES - 1) * space_between_electrodes + 2 * LATERAL_PADDING
 
     # ----- 2. Extract subsection from the section -----
     # The subsection length is randomly chosen between the number of
     # electrodes and the maximum length of the section.
-    subsection_length: int = rd.randint(NUM_ELECTRODES, 200)
+    subsection_length: int = rd.randint(NUM_ELECTRODES, 150)
     sub_section = extract_subsection(
         section, subsection_length, VERTICAL_FRACTION
     )
@@ -657,7 +659,7 @@ def process_sample(section: np.ndarray[np.int8],
     )
 
     # ----- 5. Flatten the resistivity model -----
-    resistivity_model_flat: np.ndarray[float] = \
+    resistivity_model_flat: np.ndarray[np.float16] = \
         np.flipud(resistivity_model).ravel()
 
     # ----- 6. Create a TensorMesh -----
@@ -682,7 +684,7 @@ def process_sample(section: np.ndarray[np.int8],
     # We want a flat topography
     z_topo = np.zeros_like(x_topo)
     # Create the 2D topography
-    topo_2d: np.ndarray[float] = np.c_[x_topo, z_topo]
+    topo_2d: np.ndarray[np.float16] = np.c_[x_topo, z_topo]
 
     # ----- 9. Link resistivities to the mesh -----
     # We activate all cells below the surface
@@ -711,7 +713,7 @@ def process_sample(section: np.ndarray[np.int8],
         )
         forward_model = resistivity_simulation.dpred(
             resistivity_model_flat
-        )
+        ).astype(np.float16)
 
     # ----- 12. Recreate Pseudo Sections from Simulation Results -----
     if SCHEME_NAME == "wa":
@@ -761,10 +763,20 @@ def main(NUM_SAMPLES: int,
     print(f"Starting processing with {BATCH_SIZE} samples per batch.")
     # Open (or create) an LMDB environment.
     # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB 
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=2 ** 35)  # 32 GB
+
+    if (OUTPUT_PATH / "ckpt.txt").exists():
+        with open(OUTPUT_PATH / "ckpt.txt", "r") as f:
+            index = int(f.readline())
+            section_idx = int(f.readline())
+            file_name = Path(f.readline().strip())
+            print(f"Resuming from index {index} in file {file_name}")
+    else: 
+        index = 0
+        section_idx = 0
+        file_name = None
 
     buffer = {}
-    index = 0
 
     progress_bar = tqdm(
         total=NUM_SAMPLES,
@@ -776,11 +788,19 @@ def main(NUM_SAMPLES: int,
     except NameError:
         pass
 
-    for file in DATA_PATH.glob("*.npz"):
+    files = sorted(DATA_PATH.glob("*.npz"))
+    if file_name is not None:
+        # Find the file in the sorted list
+        file_index = files.index(file_name)
+        # Start processing from the next file
+        files = files[file_index:]
+
+    for file in sorted(DATA_PATH.glob("*.npz")):
         multi_array = np.load(file, mmap_mode="r")["arr_0"]
-        for section_idx, section in enumerate(multi_array):
+
+        for section_idx in range(section_idx + 1, len(multi_array)):
             sample = process_sample(
-                section,
+                multi_array[section_idx],
                 VERTICAL_FRACTION,
                 VERBOSE,
             )
@@ -803,6 +823,12 @@ def main(NUM_SAMPLES: int,
                     f"Flushed buffer ({section_idx + 1} / {len(multi_array)} ;"
                     f" file {file.name})"
                 )
+                with open(
+                    OUTPUT_PATH / "ckpt.txt", "w"
+                ) as f:
+                    f.write(f"{index}\n")
+                    f.write(f"{section_idx}\n")
+                    f.write(f"{file.name}\n")
                 buffer = {}  # Reset buffer after flushing
 
     # Write any remaining samples in the buffer
@@ -845,7 +871,7 @@ def main_parallel(NUM_SAMPLES: int,
     """
     print(f"Starting parallel processing with {BATCH_SIZE} samples per batch.")
     # Open (or create) the LMDB environment.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=10 * 10 ** 9)
+    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=2 ** 36)  # 64 GB
     buffer = {}
     index = 0
 
@@ -859,11 +885,11 @@ def main_parallel(NUM_SAMPLES: int,
 
     for file in DATA_PATH.glob("*.npz"):
         multi_array = np.load(file, mmap_mode="r")["arr_0"]
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(max_workers=10) as executor:
             # Process sections in parallel
             futures = {
                 executor.submit(
-                    process_sample, section, VERTICAL_FRACTION, VERBOSE
+                    process_sample, section, VERTICAL_FRACTION, VERBOSE, section_idx
                 ): section_idx
                 for section_idx, section in enumerate(multi_array)
             }
