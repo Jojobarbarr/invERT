@@ -643,7 +643,7 @@ def process_sample(section: np.ndarray[np.int8],
     # ----- 2. Extract subsection from the section -----
     # The subsection length is randomly chosen between the number of
     # electrodes and the maximum length of the section.
-    subsection_length: int = rd.randint(NUM_ELECTRODES, 150)
+    subsection_length: int = rd.randint(NUM_ELECTRODES, 200)
     sub_section = extract_subsection(
         section, subsection_length, VERTICAL_FRACTION
     )

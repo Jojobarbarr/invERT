@@ -40,7 +40,7 @@ def shift(dataloader: DataLoader,
         for each array.
     """
     rho_app_mins: dict[str, list[npt.NDArray[np.float64]]] = {array: [] for array in arrays}
-    for _, batch in tqdm(dataloader, desc="Computing minimum apparent resistivity", unit="batch"):
+    for batch in tqdm(dataloader, desc="Computing minimum apparent resistivity", unit="batch"):
         for array in arrays:
             rho_app_min_batch = daT.compute_min(batch, arrays)
             rho_app_mins[array].append(rho_app_min_batch[array])
@@ -52,13 +52,21 @@ def shift(dataloader: DataLoader,
 
 
 def write_to_lmdb(txn: lmdb.Transaction,
-                  sample_indices: list[int],
                   batch: invERTbatch,
                   ) -> None:
-    for sample_idx, values in zip(sample_indices, zip(*batch)):
-        key = f"{sample_idx:08d}".encode("ascii")
-        data = pickle.dumps(values)
-        txn.put(key, data)
+    for values in zip(*batch):
+        cursor = txn.cursor()
+        if cursor.last():
+            last_key = cursor.key()
+            last_index = int(last_key.decode("ascii"))  # Convert back to integer
+        else:
+            last_index = 0  # Start at 0 if the database is empty
+        
+        for i, values in enumerate(zip(*batch), start=1):
+            new_key = f"{last_index + i:08d}".encode("ascii")  # Increment from last index
+            data = pickle.dumps(values)
+            txn.put(new_key, data)
+            del data
 
 
 def pre_transfrom(dataloader: DataLoader,
@@ -93,13 +101,16 @@ def pre_transfrom(dataloader: DataLoader,
         env = lmdb.open(str(lmdb_path / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB
         description = f"{'Pre-transforming and w' if args.shift or args.log else 'W'}riting to LMDB copy"
         with env.begin(write=True) as txn:
-            for sample_indices, batch in tqdm(dataloader, desc=description, unit="batch"):
-                new_batch = batch
+            for batch in tqdm(dataloader, desc=description, unit="batch"):
+                new_batch = daT.resize_batch(batch, (24, 64))
                 if args.shift:
                     new_batch = daT.shift(new_batch, rho_app_min)
                 if args.log:
                     new_batch = daT.log_transform(new_batch)
-                write_to_lmdb(txn, sample_indices, new_batch)
+                if args.regrid:
+                    new_batch = daT.regrid_batch(new_batch)
+                write_to_lmdb(txn, new_batch)
+                del new_batch
         env.close()
     else:
         print(
@@ -137,21 +148,17 @@ def post_transfrom(dataloader: DataLoader,
     -------
     None
     """
-    print("testing")
     if (lmdb_path / 'data.lmdb').exists():
         rmtree(lmdb_path / 'data.lmdb')
-    print(f"ok, removed {lmdb_path / 'data.lmdb'}")
     max_value: dict[str, float] = {array: max(np.max(rho_app_row) for rho_app_row in flattened[array]) for array in arrays}
-    print("maxx")
     env = lmdb.open(str(lmdb_path / 'data.lmdb'), map_size= 2 ** 35)  # 32 GB
-    print("env")
     description = f"Post-transforming and writing to LMDB copy"
     with env.begin(write=True) as txn:
-        print("txn")
-        for sample_indices, batch in tqdm(dataloader, desc=description, unit="batch"):
+        for batch in tqdm(dataloader, desc=description, unit="batch"):
             new_batch = batch
             new_batch = daT.normalize(new_batch, max_value)
-            write_to_lmdb(txn, sample_indices, new_batch)
+            write_to_lmdb(txn, new_batch)
+            del new_batch
     env.close()
 
 
@@ -328,7 +335,7 @@ def process_data(dataloader: DataLoader,
         the minimum depth, the maximum depth,
         and the flattened pseudo sections for each array.
     """
-    for _, batch in tqdm(dataloader, desc="Computing statistics", unit="batch"):
+    for batch in tqdm(dataloader, desc="Computing statistics", unit="batch"):
         sums: tuple[
             list[npt.NDArray[np.float64]],
             list[npt.NDArray[np.float64]],
@@ -578,7 +585,7 @@ def main(args: Namespace,
     dataset = LMDBDataset(proc_lmdb_path)
     dataloader = DataLoader(
         dataset,
-        batch_size=512,
+        batch_size=128,
         shuffle=False,
         num_workers=8,
         prefetch_factor=4,
@@ -631,6 +638,12 @@ def parse_args() -> Namespace:
         "--plot",
         action="store_true",
         help="Plot the pseudo section statistics."
+    )
+    parser.add_argument(
+        "-g",
+        "--regrid",
+        action="store_true",
+        help="Regrids the pseudo sections."
     )
     return parser.parse_args()
 

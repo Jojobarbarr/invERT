@@ -6,6 +6,111 @@ from itertools import zip_longest
 from collections import defaultdict
 from data import invERTbatch
 import warnings
+import torch
+import torch.nn.functional as F
+
+def regrid(x: torch.Tensor,) -> npt.NDArray[np.float32]:
+    # Get dimensions
+    N, C, H, W = x.shape
+
+    # Identify the first and last nonzero columns for each row
+    row_mask = x[0, 0] != 0  # Shape: (H, W)
+    col_indices = torch.arange(W, device=x.device).expand(H, W)
+
+    col_min = torch.where(row_mask, col_indices, W).amin(dim=1)  # First nonzero column per row
+    col_max = torch.where(row_mask, col_indices, -1).amax(dim=1)  # Last nonzero column per row
+
+    # Handle empty rows (avoid invalid ranges)
+    col_min[col_min == W] = 0
+    col_max[col_max == -1] = W - 1
+
+    # Compute normalized grid coordinates
+    j = torch.linspace(0, 1, W, device=x.device).view(1, W)  # Column scale factor
+    mapped_cols = col_min.view(H, 1) + (col_max - col_min).view(H, 1) * j  # Shape: (H, W)
+
+    norm_x = (mapped_cols / (W - 1)) * 2 - 1  # Normalize to [-1, 1]
+    norm_y = torch.linspace(-1, 1, H, device=x.device).view(H, 1).expand(H, W)  # Shape: (H, W)
+
+    # Stack to create the grid: [N, H, W, 2]
+    grid = torch.stack((norm_x, norm_y), dim=-1).unsqueeze(0).expand(N, -1, -1, -1)
+
+    # Perform grid sampling
+    return F.grid_sample(x, grid, mode='bilinear', align_corners=True).squeeze().numpy()
+
+def regrid_batch(batch: invERTbatch,) -> invERTbatch:
+    """
+    Applies the regrid function to each pseudosection in the batch.
+    
+    Parameters
+    ----------
+    batch: invERTbatch
+        Batch of data containing the pseudosections.
+    
+    Returns
+    -------
+    invERTbatch
+        Batch of data containing the regridded pseudosections.
+    """
+    num_electrodes, subsection_lengths, scheme_names, pseudosections, norm_log_resistivity_models = batch
+    regridded_pseudosections = tuple((regrid(torch.from_numpy(ps).unsqueeze(0).unsqueeze(0)) for ps in pseudosections))
+    return (num_electrodes, subsection_lengths, scheme_names, regridded_pseudosections, norm_log_resistivity_models)
+
+def resize(sample: np.ndarray[np.int8],
+           new_shape: tuple[int, int]
+           ) -> np.ndarray[np.int8]:
+    """
+    Resizes a sample to a new shape using nearest neighbor interpolation.
+
+    Parameters
+    ----------
+    sample : np.ndarray[np.int8]
+        The sample to resize.
+    new_shape : tuple[int, int]
+        The new shape of the sample.
+
+    Returns
+    -------
+    np.ndarray[np.int8]
+        The resized sample.
+    """
+    src_rows, src_cols = sample.shape
+    dst_rows, dst_cols = new_shape
+    # Compute nearest neighbor indices
+    row_indices: np.ndarray[int] = np.round(
+        np.linspace(0, src_rows - 1, dst_rows)
+    ).astype(int)
+    col_indices: np.ndarray[int] = np.round(
+        np.linspace(0, src_cols - 1, dst_cols)
+    ).astype(int)
+
+    # Use advanced indexing to select nearest neighbors
+    resized_array: np.ndarray[np.int8] = sample[
+        row_indices[:, None], col_indices
+    ]
+    return resized_array
+
+def resize_batch(batch: invERTbatch,
+                 target_size: tuple[int, int],
+                 ) -> invERTbatch:
+    """
+    Resizes the pseudosections in the dataloader to a target size.
+
+    Parameters
+    ----------
+    batch: invERTbatch
+        Batch of data containing the pseudosections.
+    target_size: tuple[int, int]
+        Target size for the pseudosections.
+    
+    Returns
+    -------
+    invERTbatch
+        Batch of data containing the resized pseudosections.
+    """
+    num_electrodes, subsection_lengths, scheme_names, pseudosections, norm_log_resistivity_models = batch
+    resized_pseudosections = tuple((resize(ps, target_size) for ps in pseudosections))
+    resized_models = tuple((resize(model, (219, 292)) for model in norm_log_resistivity_models))
+    return (num_electrodes, subsection_lengths, scheme_names, resized_pseudosections, resized_models)
 
 def log_transform(batch: invERTbatch,
                   ) -> invERTbatch:
@@ -83,8 +188,12 @@ def normalize(batch: invERTbatch,
         Batch of data containing the normalized pseudosections.
     """
     num_electrodes, subsection_lengths, scheme_names, pseudosections, norm_log_resistivity_models = batch
+    normalized_num_electrodes = tuple(((num_electrode - 24) / 72 for num_electrode in num_electrodes))
+    normalized_subsection_lengths = tuple(((subsection_length - 24) / 176 for subsection_length in subsection_lengths))
+    normalized_array = tuple((0 if array == "wa" else 1 for array in scheme_names))
     normalized_pseudosections = tuple((np.where(~np.isnan(ps), ps / max_value[array], ps) for ps, array in zip(pseudosections, scheme_names)))
-    return (num_electrodes, subsection_lengths, scheme_names, normalized_pseudosections, norm_log_resistivity_models)
+
+    return (normalized_num_electrodes, normalized_subsection_lengths, normalized_array, normalized_pseudosections, norm_log_resistivity_models)
 
 
 def compute_sum(batch: invERTbatch,

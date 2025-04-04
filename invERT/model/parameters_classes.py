@@ -1,15 +1,13 @@
 from dataclasses import dataclass
-import multiprocessing as mp
-import numpy as np
+from pathlib import Path
 
 
 @dataclass
-class TestingParameters:
-    loss_arrays: np.ndarray
-    test_loss_arrays: np.ndarray
-    repetition: int
-    print_points: int
-    nb_print_points: int
-    queue: mp.Queue
-    epoch: int
-    batch_loss: float
+class LoggingParameters:
+    loss_value: list[float]
+    test_loss_value: list[float]
+    print_points: set[int]
+    print_points_list: list[int]
+    batch_size: int
+    figure_folder: Path
+    model_output_folder: Path

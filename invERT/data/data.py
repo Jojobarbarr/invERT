@@ -46,7 +46,7 @@ class LMDBDataset(Dataset):
         key = f"{index:08d}".encode('ascii')
         with self.env.begin() as txn:
             data = txn.get(key)
-        return index, pickle.loads(data)
+        return pickle.loads(data)
 
     # def __setitem__(self, indices, batch):
     #     for idx, val in zip(indices, zip(*batch)):
@@ -82,19 +82,16 @@ def lmdb_custom_collate_fn(batch):
     For fields with varying shapes (the numpy arrays), we keep them as lists.
     For the other items, you can choose to stack or keep as is.
     """
-    indices, data = zip(*batch)
     num_electrodes, subsection_lengths, scheme_names, \
-        pseudosections, norm_log_resistivity_models = zip(*data)
+        pseudosections, norm_log_resistivity_models = zip(*batch)
 
     return (
-        indices, (
-            num_electrodes,
-            subsection_lengths,
-            scheme_names,
-            pseudosections,
-            norm_log_resistivity_models
-            )
-        )
+        num_electrodes,
+        subsection_lengths,
+        scheme_names,
+        pseudosections,
+        norm_log_resistivity_models
+    )
         
 
 
