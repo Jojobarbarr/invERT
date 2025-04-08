@@ -191,7 +191,7 @@ def normalize(batch: invERTbatch,
     normalized_num_electrodes = tuple(((num_electrode - 24) / 72 for num_electrode in num_electrodes))
     normalized_subsection_lengths = tuple(((subsection_length - 24) / 176 for subsection_length in subsection_lengths))
     normalized_array = tuple((0 if array == "wa" else 1 for array in scheme_names))
-    normalized_pseudosections = tuple((np.where(~np.isnan(ps), ps / max_value[array], ps) for ps, array in zip(pseudosections, scheme_names)))
+    normalized_pseudosections = tuple((np.where(~np.isnan(ps), ps / max_value[array], 0) for ps, array in zip(pseudosections, scheme_names)))
 
     return (normalized_num_electrodes, normalized_subsection_lengths, normalized_array, normalized_pseudosections, norm_log_resistivity_models)
 

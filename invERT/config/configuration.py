@@ -41,6 +41,14 @@ class Config:
                 for index, item in enumerate(value):
                     if isinstance(item, dict):
                         value[index] = Config(item)
+                    elif isinstance(item, list):
+                        for sub_index, sub_item in enumerate(item):
+                            if isinstance(sub_item, dict):
+                                item[sub_index] = Config(sub_item)
+                            else:
+                                raise ValueError(
+                                    f"Expected a dictionary, got {sub_item} "
+                                    f"of type {type(sub_item)} for key {key}.")
             else:
                 raise ValueError(
                     f"Expected a dictionary or a list, got {value} of type "

@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import MSELoss, L1Loss
 import numpy as np
 from config.configuration import Config
-from model.models import DynamicModel
+from model.models import DynamicModel, Layer, UNet, MLP_huge
 from pathlib import Path
 from model.train import train
 from torch.utils.data import random_split
@@ -26,102 +26,65 @@ import multiprocessing as mp
 from model.parameters_classes import LoggingParameters
 
 
-def init_gen_data(dataset_config: Config):
-    # The dataset is generated
-    num_samples: int = dataset_config.num_samples
-    num_sub_groups: int = dataset_config.num_sub_group
-    data_min_size: int = dataset_config.data_min_size
-    data_max_size: int = dataset_config.data_max_size
-    noise: float = dataset_config.noise
 
-    num_samples = int(num_samples * (1 + dataset_config.test_split))
-    num_val_samples = int(num_samples * dataset_config.validation_split)
-    data, val_data = generate_data(
-        num_samples,
-        num_sub_groups,
-        data_min_size,
-        data_max_size,
-        noise,
-        num_val_samples
-    )
-    max_input_shape: int = dataset_config.data_max_size
-    data, target, min_data, max_data, min_target, max_target = \
-        pre_process_data(data)
-    val_data, val_target, _, _, _, _ = pre_process_data(val_data)
-
-    return (data,
-            val_data,
-            target,
-            val_target,
-            max_input_shape,
-            min_data,
-            max_data,
-            min_target,
-            max_target)
-
-
-def init_gen_dataloaders(config: Config,
-                         data: list[Tensor],
-                         val_data: list[Tensor],
-                         target: list[Tensor],
-                         val_target: list[Tensor],
-                         ) -> tuple[list[DataLoader]]:
-    dataset_config: Config = config.dataset
-    batch_size: int = dataset_config.batch_size
-    batch_mixture: int = dataset_config.batch_mixture
-    num_sub_group: int = dataset_config.num_sub_group
-    sub_group_size: int = dataset_config.num_samples // num_sub_group
-    test_split: float = dataset_config.test_split
-
-    train_dataloaders, test_dataloaders, val_dataloaders = \
-        initialize_datasets(
-            data,
-            val_data,
-            target,
-            val_target,
-            batch_size,
-            batch_mixture,
-            num_sub_group,
-            sub_group_size,
-            test_split,
-        )
-
-    return train_dataloaders, test_dataloaders, val_dataloaders
-
+def go_through_cnn_layers(cnn_config: Config, cnn_layers: list):
+    layers_list: list[Layer | list[Layer]] = []
+    for layer in cnn_layers:
+        if layer.layer_type == "branch":
+            layers_first_choice = go_through_cnn_layers(cnn_config, layer.options[0])
+            if len(layer.options) > 1:
+                layers_second_choice = go_through_cnn_layers(cnn_config, layer.options[1])
+            layers_list.append(
+                [
+                    layers_first_choice,
+                    layers_second_choice
+                ]
+            )
+        else:
+            if "1D" in layer.layer_type:
+                kernel_shape: int = layer.kernel_width
+                stride: int = layer.stride_width
+                padding: int = layer.padding_width
+                num_in_channels: int = 0
+            else:
+                kernel_shape: tuple[int] = (layer.kernel_width, layer.kernel_height)
+                stride: tuple[int] = (layer.stride_width, layer.stride_height)
+                padding: tuple[int] = (layer.padding_width, layer.padding_height)
+                num_in_channels: int = layer.num_in_channels
+            dilation: int = layer.dilation
+            layers_list.append(
+                Layer(
+                    layer_type=layer.layer_type,
+                    kernel_shape=kernel_shape,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation,
+                    num_in_channels=num_in_channels,
+                )
+            )
+    return layers_list
 
 def init_model(config: Config) -> DynamicModel:
-    mlp_config: Config = config.model.mlp
-    cnn_config: Config = config.model.cnn
+    # mlp_config: Config = config.model.mlp
+    # cnn_config: Config = config.model.cnn
 
-    layer_types: list[str] = []
-    num_in_channels: list[int] = []
-    kernel_shapes: list[int] = []
-    strides: list[int] = []
-    paddings: list[int] = []
+    # layers_list: list[Layer | list[list[Layer]]] = go_through_cnn_layers(cnn_config, cnn_config.cnn_layers)
 
-    for layer in cnn_config.conv_layers:
-        layer_types.append(layer.layer_type)
-        num_in_channels.append(layer.num_in_channels)
-        kernel_shapes.append((layer.kernel_width, layer.kernel_height))
-        strides.append((layer.stride_width, layer.stride_height))
-        if layer.layer_type != "maxpool":
-            paddings.append((layer.padding_width, layer.padding_height))
-        else:
-            paddings.append((0, 0))
-    
-    num_out_channels: int = cnn_config.num_out_channels
-        
+    # num_out_channels: int = cnn_config.num_out_channels
 
-    model = DynamicModel(
-        mlp_config.input_metadata_dim,
-        mlp_config.hidden_dims,
-        layer_types,
-        num_in_channels,
-        kernel_shapes,
-        strides,
-        paddings,
-        num_out_channels,
-    )
+    # threshold: int = 30
+
+    # model = DynamicModel(
+    #     mlp_config.input_metadata_dim,
+    #     mlp_config.hidden_dims,
+    #     layers_list,
+    #     num_out_channels,
+    #     threshold,
+    # )
+
+    model = UNet()
+
+    # model = MLP_huge()
 
     return model
 
@@ -181,11 +144,10 @@ def init_logging(config: Config,
     num_batches: int = len(train_dataloader)
     step_between_print: int = num_batches // num_print_points
     print_points: set[int] = {
-        i * step_between_print
+        i * step_between_print + (epoch * num_batches)
         for i in range(1, num_print_points)
+        for epoch in range(config.training.epochs)
     }
-    if num_batches - 1 not in print_points:
-        print_points.add(len(train_dataloader) - 1)
 
     return print_points
 
@@ -256,6 +218,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
+        prefetch_factor=4,
         collate_fn=lmdb_custom_collate_fn,
     )
     test_dataloader: DataLoader = DataLoader(
@@ -263,6 +226,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
+        prefetch_factor=2,
         collate_fn=lmdb_custom_collate_fn,
     )
     val_dataloader: DataLoader = DataLoader(
@@ -296,7 +260,7 @@ def main(config: Config):
     model_output_folder = figure_folder / f"model_output"
     model_output_folder.mkdir(parents=True, exist_ok=True)
 
-    testing_params: LoggingParameters = LoggingParameters(
+    logging_params: LoggingParameters = LoggingParameters(
         loss_value=[],
         test_loss_value=[],
         print_points=print_points,
@@ -315,7 +279,7 @@ def main(config: Config):
         optimizer,
         criterion,
         device,
-        testing_params
+        logging_params
     )
 
     print("Training complete.")
