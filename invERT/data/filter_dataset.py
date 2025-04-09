@@ -63,7 +63,6 @@ def main(lmdb_dir: Path,
     output_dir.mkdir(exist_ok=True)
 
     index: int = 0
-    buffer: io.BytesIO = io.BytesIO()
 
     with lmdb.open(str(lmdb_dir), readonly=True, lock=False) as src_env:
         total_entries: int = src_env.stat()["entries"]
@@ -84,8 +83,8 @@ def main(lmdb_dir: Path,
 
                     sample: InvERTSample = to_tensor_sample(values)
 
-                    buffer.seek(0)
-                    buffer.truncate(0)
+                    
+                    buffer: io.BytesIO = io.BytesIO()
                     torch.save(sample, buffer)
                     key = f"{index:08d}".encode("ascii")
                     write_txn.put(key, buffer.getvalue())

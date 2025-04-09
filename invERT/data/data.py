@@ -18,6 +18,11 @@ class InvERTSample(TypedDict):
     pseudosection: torch.Tensor
     norm_log_resistivity_model: torch.Tensor
 
+class InvERTBatch_per_cat(TypedDict):
+    num_electrodes: torch.Tensor
+    subsection_lengths: torch.Tensor
+    array_types: torch.Tensor
+
 
 class LMDBDataset(Dataset):
     def __init__(self,
@@ -166,21 +171,20 @@ class LMDBDataset(Dataset):
         """
         self.close()
 
-# def lmdb_custom_collate_fn(batch: invERTbatch):
-#     """
-#     Custom collate function to handle batches with heterogeneous items.
 
-#     Each item in batch is a tuple: (int, int, str, np.ndarray, np.ndarray).
-#     For fields with varying shapes (the numpy arrays), we keep them as lists.
-#     For the other items, you can choose to stack or keep as is.
-#     """
-#     num_electrodes, subsection_lengths, scheme_names, \
-#         pseudosections, norm_log_resistivity_models = zip(*batch)
+    def lmdb_collate_fn(batch: list[InvERTSample]) -> list[InvERTSample]:
+        return batch
 
-#     return (
-#         num_electrodes,
-#         subsection_lengths,
-#         scheme_names,
-#         pseudosections,
-#         norm_log_resistivity_models
-#     )
+
+    def lmdb_collate_fn_per_cat(batch: list[InvERTSample]) -> InvERTBatch_per_cat:
+        num_electrodes = torch.stack([item['num_electrode'] for item in batch])
+        subsection_length = torch.stack([item['subsection_length'] for item in batch])
+        array_type = torch.stack([item['array_type'] for item in batch])
+
+        batch = InvERTBatch_per_cat(
+            num_electrodes=num_electrodes,
+            subsection_lengths=subsection_length,
+            array_types=array_type,
+        )
+
+        return batch
