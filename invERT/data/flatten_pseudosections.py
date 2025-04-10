@@ -8,42 +8,16 @@ from data import LMDBDataset
 import shutil
 
 
-def normalize(dataset: LMDBDataset,
-              output_dir: Path,
-              batch_size: int,
-              characteristics: list[str]
-              ) -> None:
-    """
-    Normalize the dataset by scaling the specified characteristics.
-    
-    Parameters
-    ----------
-    dataset : LMDBDataset
-        The dataset to normalize.
-    output_dir : Path
-        Directory to save the normalized dataset.
-    batch_size : int
-        Batch size for processing samples.
-    characteristics : list[str]
-        List of characteristics to normalize.
-    """
-    minimums = torch.load(save_directory / 'minimums.pt')
-    maximums = torch.load(save_directory / 'maximums.pt')
-
-    for characteristic in characteristics:
-        assert characteristic in minimums.keys(), f'Characteristic {characteristic} not found in minimums, first compute Min/Max for characteristics {characteristics}'
-
-    index: int = 0
-        
+def flatten(dataset: LMDBDataset,
+            output_dir: Path,
+            batch_size: int,
+            ) -> None:
+    index = 0
     with lmdb.open(str(output_dir), map_size=2 ** 35, readonly=False, writemap=True, map_async=True) as env:
         txn: lmdb.Transaction = env.begin(write=True)
         for sample in tqdm(dataset, desc=f'Computing min/max', unit='sample', total=len(dataset)):
-            array_type = torch.argmax(sample['array_type']).item()
-            for characteristic in characteristics:
-                characteristic_value = sample[characteristic]
-                normalized_characteristic_value = (characteristic_value - minimums[characteristic][array_type]) / (maximums[characteristic][array_type] - minimums[characteristic][array_type])
-                sample[characteristic] = normalized_characteristic_value
-            # Store the sample in the LMDB database
+            pseudosection = sample['pseudosection']
+            sample['pseudosection'] = pseudosection[pseudosection != 0]
             buffer: io.BytesIO = io.BytesIO()
             torch.save(sample, buffer)
             key = f"{index:08d}".encode("ascii")
@@ -56,8 +30,6 @@ def normalize(dataset: LMDBDataset,
         
         if txn:
             txn.commit()
-
-
 if __name__ == "__main__":
     parser = ArgumentParser(description="Normalize the dataset")
     parser.add_argument(
@@ -77,13 +49,6 @@ if __name__ == "__main__":
         default=65536,
         help="Batch size for processing samples",
     )
-    parser.add_argument(
-        "-c",
-        "--characteristics",
-        type=str,
-        nargs='+',
-        default=['num_electrode', 'subsection_length', 'pseudosection'],
-    )
     args: Namespace = parser.parse_args()
 
     lmdb_path = Path(args.dataset_path)
@@ -91,17 +56,14 @@ if __name__ == "__main__":
 
     dataset = LMDBDataset(lmdb_path, readahead=True)
 
-    characteristics = args.characteristics
-
     output_dir = args.output_dir
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    normalize(
+    flatten(
         dataset,
         output_dir,
         args.batch_size,
-        characteristics,
     )
     print(f"Normalized dataset saved to {output_dir}")

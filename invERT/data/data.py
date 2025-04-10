@@ -172,11 +172,11 @@ class LMDBDataset(Dataset):
         self.close()
 
 
-    def lmdb_collate_fn(batch: list[InvERTSample]) -> list[InvERTSample]:
+    def lmdb_collate_fn(self, batch: list[InvERTSample]) -> list[InvERTSample]:
         return batch
 
 
-    def lmdb_collate_fn_per_cat(batch: list[InvERTSample]) -> InvERTBatch_per_cat:
+    def lmdb_collate_fn_per_cat(self, batch: list[InvERTSample]) -> InvERTBatch_per_cat:
         num_electrodes = torch.stack([item['num_electrode'] for item in batch])
         subsection_length = torch.stack([item['subsection_length'] for item in batch])
         array_type = torch.stack([item['array_type'] for item in batch])

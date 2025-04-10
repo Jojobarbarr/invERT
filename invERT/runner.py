@@ -1,5 +1,7 @@
 from torch import device as set_device
+import torch
 from torch import Tensor
+import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 from torch.cuda import is_available as cuda_is_available
 from torch.optim import Adam, SGD, RMSprop
@@ -7,18 +9,14 @@ from torch.optim.optimizer import Optimizer
 from torch.nn import Module
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import MSELoss, L1Loss
-import numpy as np
 from config.configuration import Config
 from model.models import DynamicModel, Layer, UNet, MLP_huge
 from pathlib import Path
 from model.train import train
 from torch.utils.data import random_split
 from data.data import (
-    generate_data,
-    pre_process_data,
-    initialize_datasets,
     LMDBDataset,
-    lmdb_custom_collate_fn
+    InvERTSample
 )
 from typing import Type
 import matplotlib.pyplot as plt
@@ -82,9 +80,9 @@ def init_model(config: Config) -> DynamicModel:
     #     threshold,
     # )
 
-    model = UNet()
+    # model = UNet()
 
-    # model = MLP_huge()
+    model = MLP_huge()
 
     return model
 
@@ -152,37 +150,29 @@ def init_logging(config: Config,
     return print_points
 
 
-def plot_loss(queue: mp.Queue):
-    plt.ion()
-    fig, ax = plt.subplots()
-    print_points = []
-    losses = []
-    test_losses = []
-    queue.put("OK")
-    while True:
-        if not queue.empty():
-            if queue.get() == "stop":
-                break
-        while not queue.empty():
-            loss, test_loss, repetition, print_point = queue.get()
-            losses.append(loss)
-            test_losses.append(test_loss)
-            print_points.append(print_point)
-            ax.clear()
-            ax.plot(print_points, losses, label="Train loss")
-            ax.plot(print_points, test_losses, label="Test loss")
-            ax.set_xlabel("Epoch")
-            ax.set_ylabel("Loss")
-            ax.legend()
-            plt.pause(0.01)
 
+class Transform:
+    def __init__(self):
+        pass
 
-def launch_plotter(queue: mp.Queue) -> bool:
-    while True:
-        if not queue.empty():
-            if queue.get() == "OK":
-                print("Plot process started and ready.")
-                return True
+    def __call__(self, sample: InvERTSample) -> InvERTSample:
+        sample['pseudosection'] = self.pad(sample['pseudosection'])
+        sample = {
+            key: value.unsqueeze(0).unsqueeze(0)
+            if key != "pseudosection" and key != "norm_log_resistivity_model" else value
+            for key, value in sample.items()
+        }
+        return sample
+    
+    def pad(self, tensor: Tensor) -> Tensor:
+        """
+        Pad the tensor with 0, to 2209.
+        """
+        pad_size: int = 2209 - tensor.size(0)
+        if pad_size == 0:
+            return tensor
+        else:
+            return torch.nn.functional.pad(tensor, (0, pad_size), "constant", 0)
 
 
 def main(config: Config):
@@ -194,7 +184,7 @@ def main(config: Config):
     print(f"Using device: {device}")
 
     dataset_config: Config = config.dataset
-    dataset: LMDBDataset = LMDBDataset(Path(dataset_config.dataset_name))
+    dataset: LMDBDataset = LMDBDataset(Path(dataset_config.dataset_name), transform=Transform())
     dataset_length: int = len(dataset)
 
     test_split: float = dataset_config.test_split
@@ -219,7 +209,8 @@ def main(config: Config):
         shuffle=True,
         num_workers=8,
         prefetch_factor=4,
-        collate_fn=lmdb_custom_collate_fn,
+        collate_fn=dataset.lmdb_collate_fn,
+        pin_memory=False,
     )
     test_dataloader: DataLoader = DataLoader(
         test_dataset,
@@ -227,14 +218,16 @@ def main(config: Config):
         shuffle=True,
         num_workers=8,
         prefetch_factor=2,
-        collate_fn=lmdb_custom_collate_fn,
+        collate_fn=dataset.lmdb_collate_fn,
+        pin_memory=True,
     )
     val_dataloader: DataLoader = DataLoader(
         val_dataset,
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
-        collate_fn=lmdb_custom_collate_fn,
+        collate_fn=dataset.lmdb_collate_fn,
+        pin_memory=True,
     )
 
     # Training initalization

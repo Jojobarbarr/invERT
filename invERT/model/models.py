@@ -686,19 +686,21 @@ class UNet(nn.Module):
 class MLP_huge(nn.Module):
     def __init__(self):
         super(MLP_huge, self).__init__()
-        self.fc1 = nn.Linear(2209, 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc4 = nn.Linear(256, 4000)
+        self.fc1 = nn.Linear(2212, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 1024)
+        self.fc4 = nn.Linear(1024, 4096)
+        self.fc5 = nn.Linear(4096, 200 * 200)
     
     def forward(self, x, target):
-        if x.shape[0] != 2209:
-            x = F.pad(x, (0, 2209 - x.shape[0], "constant", 0))
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        x = self.fc4(x)
-        x = x.view(200, 200)
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = F.sigmoid(self.fc5(x))
+        x = x.view(1, 1, 200, 200)
         x = F.interpolate(x, size=target.shape, mode='bilinear', align_corners=False)
-        return x
+        return x.squeeze()
 
 
 def init_weights(m):
