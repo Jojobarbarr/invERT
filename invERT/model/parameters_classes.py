@@ -10,4 +10,6 @@ class LoggingParameters:
     print_points_list: list[int]
     batch_size: int
     figure_folder: Path
-    model_output_folder: Path
+    model_output_folder_train: Path
+    model_output_folder_test: Path
+    checkpoint_folder: Path
