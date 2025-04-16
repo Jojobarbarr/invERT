@@ -1,3 +1,4 @@
+
 # SimPEG functionality
 from simpeg.electromagnetics.static import resistivity as dc
 from simpeg import maps
@@ -10,68 +11,81 @@ from discretize.utils import active_from_xyz
 import numpy as np
 from pathlib import Path
 import math
-import lmdb
-
-import random as rd
-import sys
+import random
 from argparse import ArgumentParser, Namespace
 import concurrent.futures
-import pickle
-
 from concurrent.futures import ProcessPoolExecutor
-
 from time import perf_counter
+from typing import Optional, Tuple, List, Dict, Any
 
+import traceback
+import warnings
+import os
+
+# --- TQDM / Dummy TQDM ---
 try:
     from tqdm import tqdm
 except ModuleNotFoundError:
+    # Keep your DummyTqdm implementation
     class DummyTqdm:
-        def __init__(self, iterable=None, *args, total=None, **kwargs):
+        def __init__(self, iterable=None, *args, total=None, desc="Processing", unit="it", **kwargs):
             self.iterable = iterable
-            self.total = total
+            self.total = total if total is not None else (len(iterable) if hasattr(iterable, '__len__') else 0)
+            self.desc = desc
+            self.unit = unit
             self.n = 0  # Progress counter
-            self.mod = 1000  # Print progress every self.mod iterations
+            # Determine update frequency (e.g., every 1% or every 1000 items, whichever is larger)
+            self.mod = 1000
             self.start = perf_counter()
+            self.last_print_n = 0
+            self.last_print_time = self.start
+            if self.total > 0:
+                print(f"{self.desc}: Starting {self.total} {self.unit}.")
 
         def __iter__(self):
             if self.iterable is not None:
-                return iter(self.iterable)
-            return iter([])
+                for obj in self.iterable:
+                    yield obj
+                    self.update(1)
+            else:
+                return iter([])
 
         def update(self, n=1):
-            self.n += n  # Just track progress without displaying anything
-            if self.n % self.mod == 0:
-                elapsed_time: float = perf_counter() - self.start
+            self.n += n
+            now = perf_counter()
+            # Update display if enough items passed OR enough time passed (e.g., > 1 second)
+            if (self.n - self.last_print_n >= self.mod or now - self.last_print_time > 3600.0) and self.total > 0:
+                elapsed_time: float = now - self.start
+                rate = self.n / elapsed_time if elapsed_time > 0 else 0
+                remaining_items = self.total - self.n
+                eta_seconds = remaining_items / rate if rate > 0 else 0
+                progress_percent = (self.n / self.total) * 100
+
                 print(
-                    f"Processed {self.n} samples in "
-                    f"{hhmmss(elapsed_time)} ({elapsed_time / self.n:.2f}"
-                    f"s/samples).\nEstimated time remaining: "
-                    f"{hhmmss(
-                        (self.total - self.n) * elapsed_time / self.n
-                    )}"
+                    f"{self.desc}: {self.n}/{self.total} ({progress_percent:.1f}%) completed in "
+                    f"{hhmmss(elapsed_time)} ({rate:.2f} {self.unit}/s). "
+                    f"ETA: {hhmmss(eta_seconds)}"
                 )
+                self.last_print_n = self.n
+                self.last_print_time = now
 
         def close(self):
-            pass  # No cleanup needed
+            elapsed_time: float = perf_counter() - self.start
+            rate = self.n / elapsed_time if elapsed_time > 0 else 0
+            print(f"{self.desc}: Finished. Processed {self.n} {self.unit} in {hhmmss(elapsed_time)} ({rate:.2f} {self.unit}/s).")
 
     tqdm = DummyTqdm
 
-# To suppress warnings DefaultSolverWarning from SimPEG
-import warnings
-warnings.filterwarnings(
-    "ignore", category=DefaultSolverWarning
-)
+# --- Suppress Warnings ---
+# Suppress specific warnings - Keep this as it reduces noise
+warnings.filterwarnings("ignore", category=DefaultSolverWarning)
+warnings.filterwarnings("ignore", message="splu converted its input to CSC format")
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
-
+# --- Helper Functions (keep hhmmss, create_slice, extract_subsection, resize, detransform) ---
 def hhmmss(seconds: float) -> str:
-    """
-    Print the time in hours, minutes and seconds.
-
-    Parameters
-    ----------
-    seconds : float
-        The time in seconds.
-    """
     m, s = divmod(seconds, 60)
     h, m = divmod(m, 60)
     h = int(h)
@@ -79,147 +93,82 @@ def hhmmss(seconds: float) -> str:
     s = int(s)
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-
 def create_slice(max_length: int,
                  fraction: float,
-                 start: int | None = None,
+                 start: Optional[int] = None,
                  ) -> slice:
-    """
-    Creates a slice of a given fraction of the total length.
-
-    The slice can be randomly placed or start at a given index.
-
-    Parameters
-    ----------
-    max_length : int
-        The length of the sample we want to extract the slice from.
-    fraction : float
-        The fraction of the total length to keep.
-    start : int, optional
-        The starting index of the slice. If None, a random index is chosen.
-
-    Returns
-    -------
-    slice
-        The slice object.
-    """
+    if max_length == 0 or fraction == 0: return slice(0, 0) # Handle edge case
+    slice_len = max(1, int(max_length * fraction)) # Ensure at least 1
     if start is None:
-        start: int = rd.randint(0, int(max_length * (1 - fraction)))
+        # Ensure start index allows for full slice length
+        max_start = max(0, max_length - slice_len)
+        start = random.randint(0, max_start) if max_start > 0 else 0
     else:
-        start: int = start
-    return slice(start, start + int(max_length * fraction))
+        start = max(0, min(start, max_length - slice_len)) # Clamp start
+
+    return slice(start, start + slice_len)
 
 
 def extract_subsection(
-        section: np.ndarray[np.int8],
+        section: np.ndarray, # Removed specific type hint for flexibility
         subsection_length: int,
         vertical_fraction: float,
-        start: tuple[int | None, int | None] | None = (None, None),
+        start: Tuple[Optional[int], Optional[int]] = (None, None),
         return_slices: bool = False,
-) -> np.ndarray[np.int8] | tuple[np.ndarray[np.int8], slice, slice]:
-    """
-    Extracts a subsection of the section.
+) -> np.ndarray | Tuple[np.ndarray, slice, slice]:
 
-    The subsection can be randomly placed in the section or start at a given
-    index.
+    if section.ndim != 2 or section.shape[0] == 0 or section.shape[1] == 0:
+         # Handle empty or non-2D input
+         empty_subsection = np.array([]).reshape(0, 0).astype(section.dtype)
+         empty_slice = slice(0, 0)
+         return (empty_subsection, empty_slice, empty_slice) if return_slices else empty_subsection
 
-    Parameters
-    ----------
-    section : np.ndarray[np.int8]
-        The section from which to extract the subsection.
-    subsection_length : int
-        The total number of pixels to keep in the subsection.
-    vertical_fraction : float
-        The fraction of the section to keep vertically.
-    start : tuple[int | None, int | None], optional
-        The starting index of the subsection. If None, a random index is
-        chosen. Index 0 is the vertical index and index 1 is the horizontal
-        index.
-    return_slices : bool, optional
-        If True, the function returns the subsection and the slices used to
-        extract it.
-
-    Returns
-    -------
-    np.ndarray[np.int8] or tuple[np.ndarray[np.int8], slice, slice]
-        The subsection of the section or the subsection and the slices used to
-        extract it if return_slices is True.
-    """
-    # Vertical part
     depth_slice: slice = create_slice(
         section.shape[0], vertical_fraction, start[0]
     )
 
-    # Horizontal part
-    horizontal_fraction: float = subsection_length / section.shape[1]
+    horizontal_fraction: float = subsection_length / section.shape[1] if section.shape[1] > 0 else 0
     width_slice: slice = create_slice(
         section.shape[1], horizontal_fraction, start[1]
     )
 
+    subsection = section[depth_slice, width_slice]
+
     if return_slices:
-        return section[depth_slice, width_slice], depth_slice, width_slice
+        return subsection, depth_slice, width_slice
+    return subsection
 
-    return section[depth_slice, width_slice]
+def resize(sample: np.ndarray, new_shape: tuple[int, int]) -> np.ndarray:
+    # Consider using cv2 or Pillow for potentially faster resizing if this is a bottleneck
+    # import cv2
+    # return cv2.resize(sample.astype(float), (new_shape[1], new_shape[0]), interpolation=cv2.INTER_NEAREST).astype(sample.dtype)
 
-
-def resize(sample: np.ndarray[np.int8],
-           new_shape: tuple[int, int]
-           ) -> np.ndarray[np.int8]:
-    """
-    Resizes a sample to a new shape using nearest neighbor interpolation.
-
-    Parameters
-    ----------
-    sample : np.ndarray[np.int8]
-        The sample to resize.
-    new_shape : tuple[int, int]
-        The new shape of the sample.
-
-    Returns
-    -------
-    np.ndarray[np.int8]
-        The resized sample.
-    """
+    # Using NumPy implementation:
     src_rows, src_cols = sample.shape
     dst_rows, dst_cols = new_shape
-    # Compute nearest neighbor indices
-    row_indices: np.ndarray[int] = np.round(
+    if src_rows == 0 or src_cols == 0: # Handle empty input
+        return np.empty(new_shape, dtype=sample.dtype)
+
+    row_indices: np.ndarray = np.round(
         np.linspace(0, src_rows - 1, dst_rows)
     ).astype(int)
-    col_indices: np.ndarray[int] = np.round(
+    col_indices: np.ndarray = np.round(
         np.linspace(0, src_cols - 1, dst_cols)
     ).astype(int)
+    # Clamp indices to avoid out-of-bounds errors if linspace goes slightly beyond due to float precision
+    row_indices = np.clip(row_indices, 0, src_rows - 1)
+    col_indices = np.clip(col_indices, 0, src_cols - 1)
 
-    # Use advanced indexing to select nearest neighbors
-    resized_array: np.ndarray[np.int8] = sample[
-        row_indices[:, None], col_indices
-    ]
+    resized_array = sample[row_indices[:, None], col_indices]
     return resized_array
 
-
-def detransform(log_res: float | np.ndarray[np.float16]
-                ) -> float | np.ndarray[np.float16]:
-    """
-    Maps a normalized log resistivity value to a resistivity value.
-
-    The transformation is given by:
-    :math:`\rho = 2 \times 10^{4 \times \rho_{log}}`
-
-    Parameters
-    ----------
-    log_res : float or np.ndarray[np.float16]
-        The normalized log resistivity value(s).
-
-    Returns
-    -------
-    float or np.ndarray[np.float16]
-        The resistivity value(s).
-    """
-    return 2 * 10 ** (4 * log_res)
+def detransform(log_res: np.ndarray) -> np.ndarray:
+    # Ensure input is float for exponentiation
+    return (2 * 10 ** (4 * log_res.astype(np.float64))).astype(log_res.dtype)
 
 
 def schlumberger_array(nbr_electrodes: int,
-                       electrode_locations: np.ndarray[np.float16],
+                       electrode_locations: np.ndarray[np.float32],
                        data_type: str
                        ) -> list[dc.sources.Dipole]:
     """
@@ -229,7 +178,7 @@ def schlumberger_array(nbr_electrodes: int,
     ----------
     nbr_electrodes : int
         The number of electrodes.
-    electrode_locations : np.ndarray[np.float16]
+    electrode_locations : np.ndarray[np.float32]
         The locations of the electrodes.
     data_type : str
         The type of data to collect.
@@ -264,7 +213,7 @@ def schlumberger_array(nbr_electrodes: int,
 
 
 def wenner_array(nbr_electrodes: int,
-                 electrode_locations: np.ndarray[np.float16],
+                 electrode_locations: np.ndarray[np.float32],
                  data_type: str
                  ) -> list[dc.sources.Dipole]:
     """
@@ -274,7 +223,7 @@ def wenner_array(nbr_electrodes: int,
     ----------
     nbr_electrodes : int
         The number of electrodes.
-    electrode_locations : np.ndarray[np.float16]
+    electrode_locations : np.ndarray[np.float32]
         The locations of the electrodes.
     data_type : str
         The type of data to collect.
@@ -343,23 +292,23 @@ def compute_active_columns(row: int,
     return col_start, col_end
 
 
-def pseudosection_schlumberger(rhoa: list[np.float16],
+def pseudosection_schlumberger(rhoa: list[np.float32],
                                nbr_electrodes: int
-                               ) -> np.ndarray[np.float16]:
+                               ) -> np.ndarray[np.float32]:
     """
     Creates a pseudo section from a forward model result using a Schlumberger
     array.
 
     Parameters
     ----------
-    rhoa : list[np.float16]
+    rhoa : list[np.float32]
         The apparent resistivity values.
     nbr_electrodes : int
         The number of electrodes.
 
     Returns
     -------
-    np.ndarray[np.float16]
+    np.ndarray[np.float32]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -370,9 +319,9 @@ def pseudosection_schlumberger(rhoa: list[np.float16],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[np.float16] = np.empty(
-        (num_rows, num_cols), dtype=np.float16)
-    pseudo_section.fill(np.nan)
+    pseudo_section: np.ndarray[np.float32] = np.empty(
+        (num_rows, num_cols), dtype=np.float32)
+    pseudo_section.fill(0)
 
     # Fill the pseudo section with the apparent resistivity values.
     value_index: int = 0
@@ -388,22 +337,22 @@ def pseudosection_schlumberger(rhoa: list[np.float16],
     return pseudo_section
 
 
-def pseudosection_wenner(rhoa: list[np.float16],
+def pseudosection_wenner(rhoa: list[np.float32],
                          nbr_electrodes: int
-                         ) -> np.ndarray[np.float16]:
+                         ) -> np.ndarray[np.float32]:
     """
     Creates a pseudo section from a forward model result using a Wenner array.
 
     Parameters
     ----------
-    rhoa : list[np.float16]
+    rhoa : list[np.float32]
         The apparent resistivity values.
     nbr_electrodes : int
         The number of electrodes.
 
     Returns
     -------
-    np.ndarray[np.float16]
+    np.ndarray[np.float32]
         The pseudo section.
     """
     # Pseudosection shape is all determined by the number of electrodes:
@@ -424,9 +373,9 @@ def pseudosection_wenner(rhoa: list[np.float16],
 
     # Create the pseudo section, all non apparent resistivity values are set to
     # NaN.
-    pseudo_section: np.ndarray[np.float16] = np.empty(
-        (num_rows, num_cols), dtype=np.float16)
-    pseudo_section.fill(np.nan)
+    pseudo_section: np.ndarray[np.float32] = np.empty(
+        (num_rows, num_cols), dtype=np.float32)
+    pseudo_section.fill(0)
 
     value_index: int = 0
     for row_idx in range(num_rows):
@@ -451,66 +400,41 @@ def pseudosection_wenner(rhoa: list[np.float16],
     return pseudo_section
 
 
+# --- Argument Parsing ---
 def parse_input() -> Namespace:
-    """
-    Parse the input arguments.
+    """Parses command-line arguments."""
+    parser = ArgumentParser(description="Generate ERT Forward Models from Geological Sections")
+    parser.add_argument("data_path", type=Path, help="Path to the input data directory (containing .npz sections)")
+    parser.add_argument("output_path", type=Path, help="Path to the output directory for generated samples")
+    parser.add_argument("-n", "--num_samples", type=int, default=-1,
+                        help="Target number of samples to generate (-1 to process all available)")
+    parser.add_argument("-vf", "--vertical_fraction", type=float, default=0.75,
+                        help="Fraction of the vertical section to keep (0.0 to 1.0)")
+    parser.add_argument("-w", "--workers", type=int, default=None, # Default to None for ProcessPoolExecutor default
+                        help="Max number of worker processes (default: number of cores)")
+    parser.add_argument("-cf", "--checkpoint_freq", type=int, default=1000,
+                        help="Frequency (in samples) for writing checkpoints")
+    parser.add_argument("-v", "--verbose", action='store_true',
+                        help="Enable verbose output during processing")
 
-    Returns
-    -------
-    Namespace
-        The parsed arguments.
-    """
-    parser: ArgumentParser = ArgumentParser(
-        description="Assign resistivity values to the mesh"
-    )
-    parser.add_argument(
-        "data_path",
-        type=Path,
-        help="Path to the data directory",
-    )
-    parser.add_argument(
-        "output_path",
-        type=Path,
-        help="Path to the output directory",
-    )
-    parser.add_argument(
-        "-vf",
-        "--vertical_fraction",
-        type=float,
-        default=0.75,
-        help="Fraction of the section to keep vertically."
-    )
-    parser.add_argument(
-        "-bs",
-        "--batch_size",
-        type=int,
-        default=1000,
-        help="Batch size for writing to the LMDB database."
-    )
-    parser.add_argument(
-        "-p",
-        "--parallel",
-        action="store_true",
-        help="Use parallel processing."
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Print information about the forward models."
-    )
-    parser.add_argument(
-        "-a",
-        "--actualisation",
-        type=int,
-        default=1000,
-    )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Validate paths
+    if not args.data_path.is_dir():
+        parser.error(f"Data path '{args.data_path}' not found or is not a directory.")
+    args.output_path.mkdir(parents=True, exist_ok=True) # Ensure output exists
+
+    # Validate fraction
+    if not (0.0 < args.vertical_fraction <= 1.0):
+         parser.error(f"Vertical fraction must be between 0.0 and 1.0 (exclusive of 0). Got: {args.vertical_fraction}")
+
+    return args
 
 
+# --- Core Processing Logic ---
 def assign_resistivity(resized_section: np.ndarray[np.int8],
-                       ) -> tuple[np.ndarray[np.float16],
-                                  np.ndarray[np.float16]]:
+                       ) -> tuple[np.ndarray[np.float32],
+                                  np.ndarray[np.float32]]:
     """
     Assign resistivity values to the resized sections.
 
@@ -523,15 +447,15 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
 
     Returns
     -------
-    tuple[np.ndarray[np.float16], np.ndarray[np.float16]]
+    tuple[np.ndarray[np.float32], np.ndarray[np.float32]]
         The normalized log resistivity model and the resistivity model.
     """
     # Extract the rock classes from the original section
     rock_classes, inv = np.unique(resized_section, return_inverse=True)
     # Create a random normalized log resistivity value for each rock class
-    norm_log_res_values: np.ndarray[np.float16] = np.random.uniform(
+    norm_log_res_values: np.ndarray[np.float32] = np.random.uniform(
         0, 1, size=len(rock_classes)
-    ).astype(np.float16)
+    ).astype(np.float32)
     norm_log_resistivity_model = norm_log_res_values[inv].reshape(
         resized_section.shape
     )
@@ -540,7 +464,7 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
     return norm_log_resistivity_model, resistivity_model
 
 
-def create_surveys(resistivity_model: np.ndarray[np.float16],
+def create_surveys(resistivity_model: np.ndarray[np.float32],
                    NUM_ELECTRODES: int,
                    SCHEME_NAME: str,
                    LATERAL_PADDING: int,
@@ -550,7 +474,7 @@ def create_surveys(resistivity_model: np.ndarray[np.float16],
 
     Parameters
     ----------
-    resistivity_model : np.ndarray[np.float16]
+    resistivity_model : np.ndarray[np.float32]
         The resistivity model.
     NUM_ELECTRODES : int
         The number of electrodes.
@@ -572,7 +496,7 @@ def create_surveys(resistivity_model: np.ndarray[np.float16],
         LATERAL_PADDING,
         resistivity_model.shape[1] - LATERAL_PADDING,
         NUM_ELECTRODES,
-        dtype=np.float16,
+        dtype=np.float32,
     )
     electrode_locations_z = np.zeros_like(electrode_locations_x)
     electrode_locations = np.c_[
@@ -589,434 +513,297 @@ def create_surveys(resistivity_model: np.ndarray[np.float16],
     source_list = array(NUM_ELECTRODES, electrode_locations, data_type)
     return dc.Survey(source_list)
 
-
-def process_sample(section: np.ndarray[np.int8],
+def process_sample(section_data: Tuple[int, np.ndarray], # Pass index and data together
                    VERTICAL_FRACTION: float,
-                   VERBOSE: bool,
-                   sample: int = 0,
-                   ) -> tuple[
-                       int,
-                       int,
-                       str,
-                       np.ndarray[np.float16],
-                       np.ndarray[np.float16]
-]:
-    """
-    Process a sample.
-
-    Parameters
-    ----------
-    section : np.ndarray[np.int8]
-        The section to process.
-    VERTICAL_FRACTION : float
-        The fraction of the section to keep vertically.
-    VERBOSE : bool
-        If True, print information about the forward models.
-    sample : int, optional
-        The sample index.
-
-    Returns
-    -------
-    tuple[
-        int,
-        int,
-        str,
-        np.ndarray[np.float16],
-        np.ndarray[np.float16]
-    ]
-        The number of electrodes, the subsection length, the scheme name, the
-        pseudo section and the normalized log resistivity model.
-    """
-    # ----- 1. Define the parameters -----
-    # Number of electrodes
-    NUM_ELECTRODES: int = rd.randint(24, 96)
-    # Scheme name
-    SCHEME_NAME: str = rd.choice(["wa", "slm"])
-    # Pixel between electrodes
-    space_between_electrodes: int = 3
-    # Lateral padding
-    LATERAL_PADDING: int = 2
-    LATERAL_PADDING *= space_between_electrodes
-    # Resized length
-    resized_length: int = (NUM_ELECTRODES - 1) * space_between_electrodes + 2 * LATERAL_PADDING
-
-    # ----- 2. Extract subsection from the section -----
-    # The subsection length is randomly chosen between the number of
-    # electrodes and the maximum length of the section.
-    subsection_length: int = rd.randint(NUM_ELECTRODES, 200)
-    sub_section = extract_subsection(
-        section, subsection_length, VERTICAL_FRACTION
-    )
-
-    # ----- 3. Resize subsection -----
-    resized_section: np.ndarray[np.int8] = resize(
-        sub_section, (int(resized_length * VERTICAL_FRACTION), resized_length)
-    )
-
-    # ----- 4. Compute Log Resistivity -----
-    norm_log_resistivity_model, resistivity_model = assign_resistivity(
-        resized_section
-    )
-
-    # ----- 5. Flatten the resistivity model -----
-    resistivity_model_flat: np.ndarray[np.float16] = \
-        np.flipud(resistivity_model).ravel()
-
-    # ----- 6. Create a TensorMesh -----
-    mesh: TensorMesh = TensorMesh(
-        (
-            [(1, resistivity_model.shape[1])],
-            [(1, resistivity_model.shape[0])]
-        ),
-        origin="0N"
-    )
-
-    # ----- 7. Create the surveys -----
-    survey: dc.Survey = create_surveys(
-        resistivity_model, NUM_ELECTRODES, SCHEME_NAME, LATERAL_PADDING
-    )
-
-    # ----- 8. Create the topography -----
-    # Create x coordinates
-    x_topo = np.linspace(
-        0, resistivity_model.shape[1], resistivity_model.shape[1]
-    )
-    # We want a flat topography
-    z_topo = np.zeros_like(x_topo)
-    # Create the 2D topography
-    topo_2d: np.ndarray[np.float16] = np.c_[x_topo, z_topo]
-
-    # ----- 9. Link resistivities to the mesh -----
-    # We activate all cells below the surface
-    active_cells: np.ndarray = active_from_xyz(mesh, topo_2d)
-    resistivity_map: maps.IdentityMap = maps.IdentityMap(mesh, mesh.n_cells)
-
-    # ----- 10. Create the simulations -----
-    survey.drape_electrodes_on_topography(
-        mesh, active_cells, option="top", topography=topo_2d
-    )
-    _ = survey.set_geometric_factor()
-    resistivity_simulation: dc.simulation_2d.Simulation2DNodal = \
-        dc.simulation_2d.Simulation2DNodal(
-            mesh,
-            survey=survey,
-            rhoMap=resistivity_map,
-            verbose=VERBOSE,
-        )
-
-    # ----- 11. Compute the forward models -----
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        warnings.simplefilter("ignore", UserWarning)
-        warnings.filterwarnings(
-            "ignore", message="splu converted its input to CSC format"
-        )
-        forward_model = resistivity_simulation.dpred(
-            resistivity_model_flat
-        ).astype(np.float16)
-
-    # ----- 12. Recreate Pseudo Sections from Simulation Results -----
-    if SCHEME_NAME == "wa":
-        get_pseudosection = pseudosection_wenner
-    elif SCHEME_NAME == "slm":
-        get_pseudosection = pseudosection_schlumberger
-
-    pseudosection = get_pseudosection(forward_model, NUM_ELECTRODES)
-
-    return (
-        NUM_ELECTRODES,
-        subsection_length,
-        SCHEME_NAME,
-        pseudosection,
-        norm_log_resistivity_model
-    )
-
-
-def main(NUM_SAMPLES: int,
-         VERTICAL_FRACTION: float,
-         DATA_PATH: Path,
-         OUTPUT_PATH: Path,
-         BATCH_SIZE: int,
-         ACTUALISATION: int,
-         VERBOSE: bool
-         ):
-    """
-    Main function to generate the pseudo sections.
-
-    Parameters
-    ----------
-    NUM_SAMPLES : int
-        The number of samples to generate.
-    VERTICAL_FRACTION : float
-        The fraction of the section to keep vertically.
-    DATA_PATH : Path
-        Path to the data directory.
-    OUTPUT_PATH : Path
-        Path to the output directory.
-    BATCH_SIZE : int
-        The batch size for writing to the LMDB database.
-    ACTUALISATION : int
-        The number of samples to process before updating the progress bar.
-    VERBOSE : bool
-        If True, print information about the forward models.
-    """
-    print(f"Starting processing with {BATCH_SIZE} samples per batch.")
-    # Open (or create) an LMDB environment.
-    # Adjust map_size according to the expected total size of your data.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=2 ** 35)  # 32 GB
-
-    if (OUTPUT_PATH / "ckpt.txt").exists():
-        with open(OUTPUT_PATH / "ckpt.txt", "r") as f:
-            index = int(f.readline())
-            section_idx = int(f.readline())
-            file_name = Path(f.readline().strip())
-            print(f"Resuming from index {index} in file {file_name}")
-    else: 
-        index = 0
-        section_idx = 0
-        file_name = None
-
-    buffer = {}
-
-    progress_bar = tqdm(
-        total=NUM_SAMPLES,
-        desc="Processing samples",
-        unit="sample"
-    )
+                   ) -> Optional[Dict[str, Any]]:
+    worker_id = os.getpid() # Get worker pid for logging
+    section_idx, section = section_data
+    log_prefix = f"[Worker {worker_id}, Sample {section_idx}]"
     try:
-        progress_bar.mod = ACTUALISATION
-    except NameError:
-        pass
+        section_idx, section = section_data
+        # ----- 1. Define the parameters -----
+        NUM_ELECTRODES: int = random.randint(24, 96)
+        SCHEME_NAME: str = random.choice(["wa", "slm"])
+        space_between_electrodes: int = 5
+        LATERAL_PADDING: int = 5 * space_between_electrodes
+        resized_length: int = (NUM_ELECTRODES - 1) * space_between_electrodes + 2 * LATERAL_PADDING
+        # ----- 2. Extract subsection -----
+        # Ensure subsection_length is reasonable relative to section width
+        max_subsection_len = section.shape[1] if section.ndim == 2 and section.shape[1] > NUM_ELECTRODES else NUM_ELECTRODES + 1
+        min_subsection_len = NUM_ELECTRODES
+        if min_subsection_len >= max_subsection_len:
+                subsection_length = min_subsection_len
+        else:
+                subsection_length = random.randint(min_subsection_len, max_subsection_len)
 
-    files = sorted(DATA_PATH.glob("*.npz"))
-    if file_name is not None:
-        # Find the file in the sorted list
-        file_index = files.index(file_name)
-        # Start processing from the next file
-        files = files[file_index:]
+        sub_section = extract_subsection(
+            section, subsection_length, VERTICAL_FRACTION
+        )
+        # ----- 3. Resize subsection -----
+        target_height = max(1, int(resized_length * VERTICAL_FRACTION)) # Ensure height >= 1
+        resized_section: np.ndarray = resize(
+            sub_section, (target_height, resized_length)
+        )
+        # ----- 4. Compute Log Resistivity -----
+        norm_log_resistivity_model, resistivity_model = assign_resistivity(
+            resized_section
+        )
+        # ----- 5. Flatten the resistivity model (only if mesh needs it) -----
+        # SimPEG often works with flattened C-order arrays
+        resistivity_model_flat = np.flipud(resistivity_model).ravel()
+        # ----- 6. Create a TensorMesh -----
+        # Make dimensions slightly more robust
+        mesh_ny, mesh_nx = resistivity_model.shape
+        mesh: TensorMesh = TensorMesh(
+            (
+                [(1.0, mesh_nx)], # Cell width of 1, nx cells
+                [(1.0, mesh_ny)]  # Cell width of 1, ny cells
+            ),
+            origin="0N" # Origin at bottom-left
+        )
+        # ----- 7. Create the surveys -----
+        survey: dc.Survey = create_surveys(
+            resistivity_model, NUM_ELECTRODES, SCHEME_NAME, LATERAL_PADDING
+        )
+        # ----- 8. Create the topography -----
+        x_topo = np.arange(mesh_nx + 1, dtype=np.float64) # Node locations
+        z_topo = np.zeros_like(x_topo) # Flat topo at z=0 relative to mesh origin "N"
+        topo_2d = np.c_[x_topo, z_topo]
+        # ----- 9. Link resistivities to the mesh -----
+        active_cells: np.ndarray = active_from_xyz(mesh, topo_2d) # Use Node reference
+        # ----- 10. Create the simulations -----
+        survey.drape_electrodes_on_topography(
+            mesh, active_cells, option="top", topography=topo_2d
+        )
+        # Geometric factor calculation might throw warnings if electrodes are too close/far
+        _ = survey.set_geometric_factor()
 
-    for file in sorted(DATA_PATH.glob("*.npz")):
-        multi_array = np.load(file, mmap_mode="r")["arr_0"]
-
-        for section_idx in range(section_idx + 1, len(multi_array)):
-            sample = process_sample(
-                multi_array[section_idx],
-                VERTICAL_FRACTION,
-                VERBOSE,
+        # Use float64 for simulation stability
+        simulation_rho_map = maps.IdentityMap(mesh)
+        resistivity_simulation: dc.simulation_2d.Simulation2DNodal = \
+            dc.simulation_2d.Simulation2DNodal(
+                mesh,
+                survey=survey,
+                rhoMap=simulation_rho_map, # Use log-resistivity map for stability
+                nky=8,
+                verbose=False,
             )
-            data = pickle.dumps(sample)
+        # ----- 11. Compute the forward models -----
+        fields = resistivity_simulation.fields(resistivity_model_flat)
+        forward_model = resistivity_simulation.dpred(resistivity_model_flat, f=fields).astype(np.float32)
+        JtJ_diag = np.sum(np.square(resistivity_simulation.getJ(resistivity_model_flat, fields)), axis=0)
+        JtJ_diag = np.flipud(JtJ_diag.reshape(resistivity_model.shape))
 
-            # Use a zero-padded key (as bytes) for ordering
-            key = f"{index:08d}".encode('ascii')
-            buffer[key] = data
-            index += 1
+        # ----- 12. Recreate Pseudo Sections -----
+        if SCHEME_NAME == "wa":
+            get_pseudosection = pseudosection_wenner
+        elif SCHEME_NAME == "slm":
+            get_pseudosection = pseudosection_schlumberger
 
-            # Update tqdm progress bar
-            progress_bar.update(1)
+        if np.min(forward_model) < 0:
+            print(f"{log_prefix} Warning: Negative forward model values for sample {section_idx}. Skipping.")
+            return None
+        
+        pseudosection = get_pseudosection(forward_model, NUM_ELECTRODES).astype(np.float32)
+        # ----- 13. Package Results -----
+        # Convert to tensors just before returning
+        sample_out = {
+            'num_electrode': np.int32(NUM_ELECTRODES),
+            'subsection_length': np.int32(subsection_length),
+            'array_type': np.array([1, 0] if SCHEME_NAME == "wa" else [0, 1], dtype=np.int32), # One-hot encode
+            'pseudosection': pseudosection,
+            'norm_log_resistivity_model': norm_log_resistivity_model,
+            'JtJ_diag': JtJ_diag,
+        }
+        return sample_out
+    
+    except Exception as e:
+        print(f"{log_prefix} Exception occurred in processing sample {section_data[0]}:")
+        traceback.print_exc()  # This prints the full traceback to stdout
+        raise  # Re-raise the exception to let the process crash
 
-            # Flush the buffer to LMDB once we have enough samples
-            if len(buffer) >= BATCH_SIZE:
-                with env.begin(write=True) as txn:
-                    for k, v in buffer.items():
-                        txn.put(k, v)
-                print(
-                    f"Flushed buffer ({section_idx + 1} / {len(multi_array)} ;"
-                    f" file {file.name})"
-                )
-                with open(
-                    OUTPUT_PATH / "ckpt.txt", "w"
-                ) as f:
-                    f.write(f"{index}\n")
-                    f.write(f"{section_idx}\n")
-                    f.write(f"{file.name}\n")
-                buffer = {}  # Reset buffer after flushing
+def write_checkpoint(output_path: Path, count: int, last_file: str):
+    """Writes a simple checkpoint file."""
+    try:
+        ckpt_file = output_path / "ckpt.txt"
+        with open(ckpt_file, "w") as f:
+            f.write(f"{count}\n")
+            f.write(f"{last_file}\n")
+    except Exception as e:
+        print(f"Warning: Failed to write checkpoint file {ckpt_file}: {e}")
 
-    # Write any remaining samples in the buffer
-    if buffer:
-        with env.begin(write=True) as txn:
-            for k, v in buffer.items():
-                txn.put(k, v)
-    progress_bar.close()
-    print("Processing complete.")
-
-
-def main_parallel(NUM_SAMPLES: int,
+def main_parallel(NUM_SAMPLES_TO_GENERATE: int,
                   VERTICAL_FRACTION: float,
                   DATA_PATH: Path,
-                  OUTPUT_PATH: Path,
-                  BATCH_SIZE: int,
-                  ACTUALISATION: int,
-                  VERBOSE: bool):
-    """
-    Process samples in parallel using ProcessPoolExecutor.
-    Sections are read and processed on the fly to avoid loading everything
-    into memory. LMDB writes are done in batches in the main process.
+                  OUTPUT_PATH: Path, # This is now the DIRECTORY for .npz files
+                  MAX_WORKERS: Optional[int],
+                  CHECKPOINT_FREQUENCY: int = 1000):
+    print(f"Starting parallel processing to generate .npz files.")
+    print(f"  Output Directory: {OUTPUT_PATH}")
+    print(f"  Max Workers: {MAX_WORKERS if MAX_WORKERS else 'Default'}")
+    print(f"  Checkpoint Frequency: Approx every {CHECKPOINT_FREQUENCY} samples")
 
-    Parameters
-    ----------
-    NUM_SAMPLES : int
-        The number of samples to generate.
-    VERTICAL_FRACTION : float
-        The fraction of the section to keep vertically.
-    DATA_PATH : Path
-        Path to the data directory.
-    OUTPUT_PATH : Path
-        Path to the output directory.
-    BATCH_SIZE : int
-        The batch size for writing to the LMDB database.
-    ACTUALISATION : int
-        The number of samples to process before updating the progress bar.
-    VERBOSE : bool
-        If True, print information about the forward models.
-    """
-    print(f"Starting parallel processing with {BATCH_SIZE} samples per batch.")
-    # Open (or create) the LMDB environment.
-    env = lmdb.open(str(OUTPUT_PATH / 'data.lmdb'), map_size=2 ** 36)  # 64 GB
-    buffer = {}
-    index = 0
+    # --- Setup Output Directory ---
+    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
+    print(f"Ensured output directory exists: {OUTPUT_PATH}")
+    sample_path = OUTPUT_PATH / "samples"
+    sample_path.mkdir(parents=True, exist_ok=True)
 
-    progress_bar = tqdm(
-        total=NUM_SAMPLES, desc="Processing samples", unit="sample"
-    )
-    try:
-        progress_bar.mod = ACTUALISATION
-    except NameError:
-        pass
+    processed_count = 0
+    last_ckpt_count = 0
+    # ckpt_frequency = BATCH_SIZE * 10 # Checkpoint frequency now an argument or fixed
+    last_processed_file = "N/A"
 
-    for file in DATA_PATH.glob("*.npz"):
-        multi_array = np.load(file, mmap_mode="r")["arr_0"]
-        with ProcessPoolExecutor(max_workers=10) as executor:
-            # Process sections in parallel
-            futures = {
-                executor.submit(
-                    process_sample, section, VERTICAL_FRACTION, VERBOSE, section_idx
-                ): section_idx
-                for section_idx, section in enumerate(multi_array)
-            }
-            for future in concurrent.futures.as_completed(futures):
-                sample = future.result()
-                data = pickle.dumps(sample)
-                key = f"{index:08d}".encode('ascii')
-                buffer[key] = data
-                index += 1
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = []
+        total_tasks_submitted = 0
 
-                # Update progress bar
-                progress_bar.update(1)
+        files = sorted(list(DATA_PATH.glob("*.npz"))) # Sort for deterministic order
+        print(f"Found {len(files)} input '.npz' files.")
 
-                # Flush buffer to LMDB when batch size is reached
-                if len(buffer) >= BATCH_SIZE:
-                    with env.begin(write=True) as txn:
-                        for k, v in buffer.items():
-                            txn.put(k, v)
-                    print(
-                        f"Flushed buffer;"
-                        f" file {file.name})"
-                    )
-                    buffer.clear()  # Reset buffer after writing
+        # --- Submission Phase ---
+        global_section_idx = 0
+        stop_submission = False
+        for file_idx, file in enumerate(files):
+            if stop_submission:
+                break
+            last_processed_file = file.name
+            try:
+                # Use mmap_mode for potentially large files, handle potential load errors
+                multi_array = np.load(file, mmap_mode="r")["arr_0"]
+            except Exception as e:
+                print(f"Error loading file {file.name}: {e}. Skipping.")
+                continue
 
-    # Write any remaining samples in the buffer.
-    if buffer:
-        with env.begin(write=True) as txn:
-            for k, v in buffer.items():
-                txn.put(k, v)
-    print("Processing complete.")
+            num_sections_in_file = multi_array.shape[0]
+            print(f"Submitting tasks from {file.name} ({num_sections_in_file} sections)...")
 
+            for local_idx in range(num_sections_in_file):
+                # Package data for submission
+                section_data_tuple = (global_section_idx, multi_array[local_idx])
+
+                future = executor.submit(
+                    process_sample,
+                    section_data_tuple,
+                    VERTICAL_FRACTION,
+                )
+                futures.append(future)
+                global_section_idx += 1
+                total_tasks_submitted += 1
+
+                # Stop submitting if we reach the target number of samples
+                if total_tasks_submitted >= NUM_SAMPLES_TO_GENERATE:
+                    print(f"Reached target number of samples ({NUM_SAMPLES_TO_GENERATE}), stopping submission.")
+                    stop_submission = True
+                    break # Stop processing this file
+
+        # --- Processing Phase ---
+        print(f"Submitted {total_tasks_submitted} tasks. Processing results and saving .npz files...")
+        progress_bar = tqdm(total=len(futures), desc="Saving samples", unit="sample")
+
+        for idx, future in enumerate(concurrent.futures.as_completed(futures)):
+            try:
+                sample_result = future.result()
+            except Exception as e:
+                print(f"Error processing future {idx}: {e}. Skipping.")
+                traceback.print_exc()  # This prints the full traceback to stdout
+                # Optionally log more details about which input sample failed
+                raise # Re-raise the exception to let the process crash
+
+            if sample_result is None:
+                print(f"Skipping sample {idx} (worker returned None).")
+                continue # Skip samples that failed in worker
+
+            # --- Save as .npz file ---
+            # Generate unique filename using the processed count
+            output_filename = sample_path / f"sample_{processed_count:08d}.npz"
+            np.savez_compressed(output_filename, **sample_result)
+
+            processed_count += 1
+            progress_bar.update(1)
+
+            # --- Checkpointing (Independent of saving) ---
+            if processed_count >= last_ckpt_count + CHECKPOINT_FREQUENCY:
+                print(f"Writing checkpoint at {processed_count} samples.")
+                # Make sure write_checkpoint handles potential errors
+                try:
+                    write_checkpoint(OUTPUT_PATH, processed_count, last_processed_file)
+                    last_ckpt_count = processed_count
+                except Exception as e:
+                    print(f"Error writing checkpoint: {e}")
+
+        # --- Final Actions ---
+        # Write final checkpoint after loop finishes
+        print(f"Writing final checkpoint at {processed_count} samples.")
+        try:
+            write_checkpoint(OUTPUT_PATH, processed_count, last_processed_file)
+        except Exception as e:
+             print(f"Error writing final checkpoint: {e}")
+
+    progress_bar.close()
+    print(f"Processing complete. Total samples written to {OUTPUT_PATH}: {processed_count}")
 
 def count_samples_in_file(filename: Path) -> int:
-    """
-    Count the number of samples in a file.
-
-    Parameters
-    ----------
-    filename : Path
-        Path to the file.
-
-    Returns
-    -------
-    int
-        The number of samples in the file.
-    """
-    return len(np.load(filename, mmap_mode="r")["arr_0"])
-
+    """Count samples using shape."""
+    with np.load(filename, mmap_mode="r") as data:
+        if "arr_0" in data:
+            return data["arr_0"].shape[0]
+        else:
+            print(f"Warning: 'arr_0' not found in {filename}")
+            return 0
 
 def count_samples(DATA_PATH: Path) -> int:
-    """
-    Count in parallel the number of samples in the dataset
-
-    Parameters
-    ----------
-    DATA_PATH : Path
-        Path to the data directory.
-
-    Returns
-    -------
-    int
-        The number of samples.
-    """
+    """Count total samples using ThreadPoolExecutor for I/O bound task."""
     npz_files = list(DATA_PATH.glob("*.npz"))
+    if not npz_files:
+        print("No .npz files found.")
+        return 0
+
+    total_samples = 0
+    # Use ThreadPool for I/O bound task (reading file headers)
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        sample_counts = list(
-            tqdm(
-                executor.map(count_samples_in_file, npz_files),
-                total=len(npz_files),
-                desc="Counting samples",
-                unit="file"
-            )
-        )
-    return sum(sample_counts)
+        future_to_file = {executor.submit(count_samples_in_file, f): f for f in npz_files}
+        results_iterator = concurrent.futures.as_completed(future_to_file)
+        results_iterator = tqdm(results_iterator, total=len(npz_files), desc="Counting samples", unit="file")
+
+        for future in results_iterator:
+            count = future.result()
+            total_samples += count
+    return total_samples
 
 
 if __name__ == "__main__":
     args: Namespace = parse_input()
-    DATA_PATH: Path = args.data_path
+    DATA_PATH: Path = args.data_path.resolve() # Use absolute path
     print(f"Data path set to {DATA_PATH}")
 
-    OUTPUT_PATH: Path = args.output_path
+    OUTPUT_PATH: Path = args.output_path.resolve()
     OUTPUT_PATH.mkdir(exist_ok=True, parents=True)
     print(f"Output path set to {OUTPUT_PATH}")
 
     VERTICAL_FRACTION: float = args.vertical_fraction
     print(f"Vertical fraction set to {VERTICAL_FRACTION}")
 
-    BATCH_SIZE: int = args.batch_size
-    print(f"Batch size set to {BATCH_SIZE}")
+    MAX_WORKERS = args.workers
 
-    PARALLEL: bool = args.parallel
+    # Save config args
+    with open(OUTPUT_PATH / "data_args.txt", "w") as f:
+        for arg, value in vars(args).items():
+            f.write(f"{arg}: {value}\n")
 
-    ACTUALISATION: int = args.actualisation
+    print(f"Counting samples in {DATA_PATH}...")
+    # We don't necessarily need to count all samples beforehand if we generate a fixed number
+    NUM_SAMPLES_AVAILABLE: int = count_samples(DATA_PATH)
+    print(f"Total samples available in source files: {NUM_SAMPLES_AVAILABLE}")
 
-    with open(OUTPUT_PATH / "args.txt", "w") as f:
-        f.write(f"Data path: {DATA_PATH}\n")
-        f.write(f"Vertical fraction: {VERTICAL_FRACTION}\n")
+    # Decide how many samples to generate (e.g., from args or fixed number)
+    NUM_SAMPLES_TO_GENERATE = NUM_SAMPLES_AVAILABLE # Example: Generate 10k samples
+    print(f"Attempting to generate {NUM_SAMPLES_TO_GENERATE} samples.")
 
-    VERBOSE: bool = args.verbose
-
-    if VERBOSE and PARALLEL:
-        warnings.warn(
-            "Verbose mode should not be activated in parallel mode."
-        )
-
-    print(f"Counting samples in {DATA_PATH}")
-    NUM_SAMPLES: int = count_samples(DATA_PATH)
-    print(f"Number of samples: {NUM_SAMPLES}")
-
-    if PARALLEL:
-        main_parallel(
-            NUM_SAMPLES,
-            VERTICAL_FRACTION,
-            DATA_PATH,
-            OUTPUT_PATH,
-            BATCH_SIZE,
-            ACTUALISATION,
-            VERBOSE
-        )
-    else:
-        main(
-            NUM_SAMPLES,
-            VERTICAL_FRACTION,
-            DATA_PATH,
-            OUTPUT_PATH,
-            BATCH_SIZE,
-            ACTUALISATION,
-            VERBOSE
-        )
+    main_parallel(
+        NUM_SAMPLES_TO_GENERATE, # Target number
+        VERTICAL_FRACTION,
+        DATA_PATH,
+        OUTPUT_PATH,
+        MAX_WORKERS,
+    )

@@ -2,6 +2,8 @@ from pathlib import Path
 import io
 
 import lmdb
+from numpy import typing as npt
+import numpy as np
 import torch
 from torch.utils.data import Dataset, get_worker_info, random_split, Subset
 
@@ -14,6 +16,15 @@ class InvERTSample(TypedDict):
     array_type: torch.Tensor
     pseudosection: torch.Tensor
     norm_log_resistivity_model: torch.Tensor
+    JtJ_diag: torch.Tensor
+
+class InvERTSampleNumpy(TypedDict):
+    num_electrode: npt.NDArray
+    subsection_length: npt.NDArray
+    array_type: npt.NDArray
+    pseudosection: npt.NDArray
+    norm_log_resistivity_model: npt.NDArray
+    JtJ_diag: npt.NDArray
 
 class InvERTBatch_per_cat(TypedDict):
     num_electrodes: torch.Tensor
@@ -43,9 +54,9 @@ def worker_init_fn(worker_id):
     )
 
 
-class LMDBDataset(Dataset):
+class InvERTDataset(Dataset):
     def __init__(self,
-                 lmdb_path: Path | str,
+                 path: Path,
                  readahead: bool = False,
                  transform: Optional[callable] = None,
                  ):
@@ -63,24 +74,12 @@ class LMDBDataset(Dataset):
             A function/transform to apply to the data.
         """
         super().__init__()
-        self.lmdb_path: str = str(lmdb_path) if isinstance(lmdb_path, Path) else lmdb_path
-        self._env: Optional[lmdb.Environment] = None
-        self.readahead: bool = readahead
+        self.path: Path = path
         self.transform = transform
+        self.samples_idx: list[str] = sorted([f.stem for f in self.path.glob('*.npz')])
+        self.length: int = len(self.samples_idx)
 
-        # Get length once
-        env = lmdb.open(
-            self.lmdb_path,
-            readonly=True,
-            lock=False,  # Ok since readonly
-            readahead=self.readahead,
-            meminit=False,  # We don't have sensitive data
-        )
-        with env.begin() as txn:
-            self.length = txn.stat()["entries"]
-        env.close()
-
-        print(f"DATASET: Found {self.length} samples in {self.lmdb_path}.")
+        print(f"DATASET: Found {self.length} samples in {self.path}.")
 
 
     def __len__(self) -> int:
@@ -92,58 +91,22 @@ class LMDBDataset(Dataset):
 
     def __getitem__(self,
                     index: int) -> InvERTSample:
-        if self._env is None:
-            # This should ideally not happen if used with DataLoader and worker_init_fn
-            self._env = lmdb.open(
-                self.lmdb_path,
-                readonly=True,
-                lock=False,
-                readahead=self.readahead,
-                meminit=False,
-            )
-            print(f"Warning: LMDB environment initialized lazily in getitem. Worker ID: {get_worker_info().id if get_worker_info() else 'Main'}")
-
-
         if index < 0:
             index = self.length + index
         if not 0 <= index < self.length:
             raise IndexError(f"Index {index} out of range for dataset of length {self.length}.")
-
-        key = f"{index:08d}".encode('ascii')
-        try:
-            with self._env.begin() as txn:
-                data_bytes: Optional[bytes] = txn.get(key)
-
-            if data_bytes is None:
-                 raise KeyError(f"Key {key.decode()} not found in LMDB {self.lmdb_path}") # Or handle differently
-
-            buffer = io.BytesIO(data_bytes)
-            # Wrap torch.load in try-except to catch deserialization errors
-            try:
-                sample: InvERTSample = torch.load(buffer, map_location='cpu') # map_location might be important
-            except Exception as e_load:
-                raise RuntimeError(f"Failed to torch.load data for key {key.decode()} (index {index})") from e_load
-
-            return self.transform(sample) if self.transform else sample
-        except lmdb.Error as e_lmdb:
-             # Catch LMDB specific errors during transaction/get
-             raise RuntimeError(f"LMDB error accessing key {key.decode()} (index {index})") from e_lmdb
-
-
-    def close(self):
-        """
-        Close the LMDB environment if it is open.
-        """
-        if self._env is not None:
-            self._env.close()
-            self._env = None
-
-
-    def __del__(self):
-        """
-        Destructor to ensure the LMDB environment is closed.
-        """
-        self.close()
+        sample = np.load(self.path / f"{self.samples_idx[index]}.npz")
+        sample = InvERTSample(
+            num_electrode=torch.tensor(sample['num_electrode'], dtype=torch.int32),
+            subsection_length=torch.tensor(sample['subsection_length'], dtype=torch.int32),
+            array_type=torch.tensor(sample['array_type'], dtype=torch.int32),
+            pseudosection=torch.tensor(sample['pseudosection'], dtype=torch.float32),
+            norm_log_resistivity_model=torch.tensor(sample['norm_log_resistivity_model'], dtype=torch.float32),
+            JtJ_diag=torch.tensor(sample['JtJ_diag'], dtype=torch.float32),
+        )
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
 
 
 def lmdb_collate_fn(batch: list[InvERTSample]) -> list[InvERTSample]:
@@ -166,20 +129,25 @@ def lmdb_collate_fn_per_cat(batch: list[InvERTSample]) -> InvERTBatch_per_cat:
 def collate_pad(batch: list[InvERTSample]):
     pseudo_list = [sample['pseudosection'] for sample in batch]
     target_list = [sample['norm_log_resistivity_model'] for sample in batch]
+    JtJ_diag_list = [sample['JtJ_diag'] for sample in batch]
 
     max_h_pseudo = max(p.shape[-2] for p in pseudo_list)
     max_w_pseudo = max(p.shape[-1] for p in pseudo_list)
     max_h_target = max(t.shape[-2] for t in target_list)
     max_w_target = max(t.shape[-1] for t in target_list)
+    max_h_JtJ_diag = max(s.shape[-2] for s in JtJ_diag_list)
+    max_w_JtJ_diag = max(s.shape[-1] for s in JtJ_diag_list)
 
     padded_pseudos = []
     pseudo_masks = []
     padded_targets = []
     target_masks = []
+    padded_JtJ_diag = []
+    JtJ_diag_masks = []
 
     pad_value = 0
 
-    for pseudo, target in zip(pseudo_list, target_list):
+    for pseudo, target, JtJ_diag in zip(pseudo_list, target_list, JtJ_diag_list):
         # Pad pseudosection (example assumes CHW or HW format, adjust padding dims accordingly)
         h, w = pseudo.shape[-2:]
         # (padding_left, padding_right, padding_top, padding_bottom)
@@ -201,17 +169,31 @@ def collate_pad(batch: list[InvERTSample]):
         padded_targets.append(padded_t)
         target_masks.append(mask_t)
 
+        # Pad JtJ_diag
+        h, w = JtJ_diag.shape[-2:]
+        padding_JtJ_diag = (0, max_w_JtJ_diag - w, 0, max_h_JtJ_diag - h)
+        padded_s = torch.nn.functional.pad(JtJ_diag, padding_JtJ_diag, mode='constant', value=pad_value)
+        mask_s = torch.ones_like(JtJ_diag, dtype=torch.bool) # Mask for original data
+        mask_s = torch.nn.functional.pad(mask_s, padding_JtJ_diag, mode='constant', value=False)
+
+        padded_JtJ_diag.append(padded_s)
+        JtJ_diag_masks.append(mask_s)
+
     # Stack along the batch dimension
     batched_pseudos = torch.stack(padded_pseudos, dim=0)
     batched_pseudo_masks = torch.stack(pseudo_masks, dim=0)
     batched_targets = torch.stack(padded_targets, dim=0)
     batched_target_masks = torch.stack(target_masks, dim=0)
+    batched_JtJ_diag = torch.stack(padded_JtJ_diag, dim=0)
+    batched_JtJ_diag_masks = torch.stack(JtJ_diag_masks, dim=0)
 
     return {
         'pseudosection': batched_pseudos,
         'pseudosection_mask': batched_pseudo_masks,
         'norm_log_resistivity_model': batched_targets,
         'target_mask': batched_target_masks,
+        'JtJ_diag': batched_JtJ_diag,
+        'JtJ_diag_mask': batched_JtJ_diag_masks,
         'array_type': torch.stack([sample['array_type'] for sample in batch]),
         'num_electrode': torch.stack([sample['num_electrode'] for sample in batch]),
     }
