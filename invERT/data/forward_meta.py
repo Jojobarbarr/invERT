@@ -1012,11 +1012,11 @@ if __name__ == "__main__":
     dataset_path: Path = Path("/mnt/ensg/tout_le_monde/Basile/clean_reduced_unified")
     num_files = len(list(dataset_path.glob("*.npz")))
     SAVE_FOLDER: Path = Path("/mnt/ensg/tout_le_monde/Basile/forward_analysis")
-    NUM_SAMPLES: int = 512
+    NUM_SAMPLES: int = 2048
     samples_per_npz = NUM_SAMPLES // 61 + 1
 
-    # air_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
-    nky_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
+    air_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
+    # nky_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
     # expMap_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
     # inter_electrode_test(NUM_SAMPLES, dataset_path, samples_per_npz, num_files, SAVE_FOLDER)
 

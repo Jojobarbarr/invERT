@@ -5,6 +5,7 @@ from pathlib import Path
 @dataclass
 class LoggingParameters:
     loss_value: list[float]
+    running_loss_value: list[float]
     test_loss_value: list[float]
     print_points: set[int]
     print_points_list: list[int]

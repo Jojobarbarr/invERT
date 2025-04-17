@@ -1,11 +1,8 @@
 from pathlib import Path
-import io
-
-import lmdb
 from numpy import typing as npt
 import numpy as np
 import torch
-from torch.utils.data import Dataset, get_worker_info, random_split, Subset
+from torch.utils.data import Dataset
 
 from typing import Optional, Tuple, TypedDict
 
@@ -32,32 +29,9 @@ class InvERTBatch_per_cat(TypedDict):
     array_types: torch.Tensor
 
 
-def worker_init_fn(worker_id):
-    """Initializes the LMDB environment for each worker process."""
-    worker_info = get_worker_info()
-    dataset_obj = worker_info.dataset  # The dataset copy in this worker process
-
-    # Access the underlying dataset (your LMDBDataset instance)
-    # It's good practice to check if it's actually a Subset first
-    if isinstance(dataset_obj, Subset):
-        original_dataset = dataset_obj.dataset 
-    else:
-        # If the DataLoader was given the original dataset directly
-        original_dataset = dataset_obj 
-    # Create and store the LMDB environment directly in the worker's dataset copy
-    original_dataset._env = lmdb.open(
-        original_dataset.lmdb_path,
-        readonly=True,
-        lock=False,  # OK for read-only
-        readahead=original_dataset.readahead,
-        meminit=False, # Good practice
-    )
-
-
 class InvERTDataset(Dataset):
     def __init__(self,
                  path: Path,
-                 readahead: bool = False,
                  transform: Optional[callable] = None,
                  ):
         """
@@ -97,8 +71,8 @@ class InvERTDataset(Dataset):
             raise IndexError(f"Index {index} out of range for dataset of length {self.length}.")
         sample = np.load(self.path / f"{self.samples_idx[index]}.npz")
         sample = InvERTSample(
-            num_electrode=torch.tensor(sample['num_electrode'], dtype=torch.int32),
-            subsection_length=torch.tensor(sample['subsection_length'], dtype=torch.int32),
+            num_electrode=torch.tensor(sample['num_electrode'], dtype=torch.float32),
+            subsection_length=torch.tensor(sample['subsection_length'], dtype=torch.float32),
             array_type=torch.tensor(sample['array_type'], dtype=torch.int32),
             pseudosection=torch.tensor(sample['pseudosection'], dtype=torch.float32),
             norm_log_resistivity_model=torch.tensor(sample['norm_log_resistivity_model'], dtype=torch.float32),
@@ -135,15 +109,10 @@ def collate_pad(batch: list[InvERTSample]):
     max_w_pseudo = max(p.shape[-1] for p in pseudo_list)
     max_h_target = max(t.shape[-2] for t in target_list)
     max_w_target = max(t.shape[-1] for t in target_list)
-    max_h_JtJ_diag = max(s.shape[-2] for s in JtJ_diag_list)
-    max_w_JtJ_diag = max(s.shape[-1] for s in JtJ_diag_list)
 
     padded_pseudos = []
-    pseudo_masks = []
     padded_targets = []
-    target_masks = []
     padded_JtJ_diag = []
-    JtJ_diag_masks = []
 
     pad_value = 0
 
@@ -153,47 +122,33 @@ def collate_pad(batch: list[InvERTSample]):
         # (padding_left, padding_right, padding_top, padding_bottom)
         padding_pseudo = (0, max_w_pseudo - w, 0, max_h_pseudo - h)
         padded_p = torch.nn.functional.pad(pseudo, padding_pseudo, mode='constant', value=pad_value)
-        mask_p = torch.ones_like(pseudo, dtype=torch.bool) # Mask for original data
-        mask_p = torch.nn.functional.pad(mask_p, padding_pseudo, mode='constant', value=False) # Pad mask with False
 
         padded_pseudos.append(padded_p)
-        pseudo_masks.append(mask_p)
 
         # Pad target
         h, w = target.shape[-2:]
         padding_target = (0, max_w_target - w, 0, max_h_target - h)
         padded_t = torch.nn.functional.pad(target, padding_target, mode='constant', value=pad_value)
-        mask_t = torch.ones_like(target, dtype=torch.bool) # Mask for original data
-        mask_t = torch.nn.functional.pad(mask_t, padding_target, mode='constant', value=False) # Pad mask with False
 
         padded_targets.append(padded_t)
-        target_masks.append(mask_t)
 
         # Pad JtJ_diag
         h, w = JtJ_diag.shape[-2:]
-        padding_JtJ_diag = (0, max_w_JtJ_diag - w, 0, max_h_JtJ_diag - h)
+        padding_JtJ_diag = (0, max_w_target - w, 0, max_h_target - h)
         padded_s = torch.nn.functional.pad(JtJ_diag, padding_JtJ_diag, mode='constant', value=pad_value)
-        mask_s = torch.ones_like(JtJ_diag, dtype=torch.bool) # Mask for original data
-        mask_s = torch.nn.functional.pad(mask_s, padding_JtJ_diag, mode='constant', value=False)
 
         padded_JtJ_diag.append(padded_s)
-        JtJ_diag_masks.append(mask_s)
 
     # Stack along the batch dimension
     batched_pseudos = torch.stack(padded_pseudos, dim=0)
-    batched_pseudo_masks = torch.stack(pseudo_masks, dim=0)
     batched_targets = torch.stack(padded_targets, dim=0)
-    batched_target_masks = torch.stack(target_masks, dim=0)
     batched_JtJ_diag = torch.stack(padded_JtJ_diag, dim=0)
-    batched_JtJ_diag_masks = torch.stack(JtJ_diag_masks, dim=0)
 
     return {
         'pseudosection': batched_pseudos,
-        'pseudosection_mask': batched_pseudo_masks,
         'norm_log_resistivity_model': batched_targets,
-        'target_mask': batched_target_masks,
         'JtJ_diag': batched_JtJ_diag,
-        'JtJ_diag_mask': batched_JtJ_diag_masks,
         'array_type': torch.stack([sample['array_type'] for sample in batch]),
         'num_electrode': torch.stack([sample['num_electrode'] for sample in batch]),
+        'subsection_length': torch.stack([sample['subsection_length'] for sample in batch]),
     }

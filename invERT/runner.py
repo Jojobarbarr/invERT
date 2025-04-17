@@ -1,30 +1,37 @@
 from pathlib import Path
 import multiprocessing as mp
-from typing import Type
+from typing import Type, Optional
 
+import torch
 from torch import device as set_device
 from torch.cuda import is_available as cuda_is_available
 from torch.optim import Adam, SGD, RMSprop
 from torch.optim.optimizer import Optimizer
 from torch.nn import Module, MSELoss, L1Loss
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader, random_split
+from torch.optim.lr_scheduler import (
+    ReduceLROnPlateau,
+    CosineAnnealingWarmRestarts,
+    LinearLR,
+    SequentialLR,
+    OneCycleLR,
+    _LRScheduler # Base class for type hinting
+)
 
 from config.configuration import Config
 from model.models import UNet, MLP_huge
 from model.train import train
 from model.parameters_classes import LoggingParameters
 from data.data import (
-    LMDBDataset,
+    InvERTDataset,
     InvERTSample,
     collate_pad,
     lmdb_collate_fn,
     lmdb_collate_fn_per_cat,
-    worker_init_fn,
 )
 
 
-def init_model() -> Module:
+def init_model(config) -> Module:
     model = UNet()
     # model = MLP_huge()
     return model
@@ -33,7 +40,7 @@ def init_model() -> Module:
 def init_optimizer(config: Config,
                    model: Module
                    ) -> Optimizer:
-    initial_lr: float = config.training.initial_learning_rate
+    initial_lr: float = config.training.learning_rate
 
     optimizer_config: Config = config.training.optimizer
 
@@ -58,21 +65,99 @@ def init_optimizer(config: Config,
 
 
 def init_scheduler(config: Config,
-                   optimizer
-                   ) -> Module:
-    scheduler_config: Config = config.training.lr_scheduler
+                   optimizer: Optimizer,
+                   train_dataloader_len: int # Pass length for step calculations
+                   ) -> Optional[_LRScheduler]: # Use base class for return type hint
 
-    scheduler: Module
-    if scheduler_config.enabled:
-        lr_scheduler_type = scheduler_config.type
-        if lr_scheduler_type == "plateau":
-            scheduler = ReduceLROnPlateau(
-                optimizer,
-                mode='min',
-                factor=scheduler_config.factor,
-                patience=scheduler_config.patience)
+    scheduler_config: Config = config.training.scheduler
+    num_epochs = config.training.epochs
+
+    if not scheduler_config.enabled:
+        print("LR Scheduler: Disabled")
+        return None
+
+    lr_scheduler_type = scheduler_config.type
+    print(f"LR Scheduler: Enabling {lr_scheduler_type}")
+
+    scheduler: Optional[_LRScheduler] = None
+
+    if lr_scheduler_type == "plateau":
+        # Your existing ReduceLROnPlateau
+        scheduler = ReduceLROnPlateau(
+            optimizer,
+            mode='min',
+            factor=0.5,
+            patience=1,
+            verbose=True,
+        )
+        print(f"  - Mode: {scheduler.mode}, Factor: {scheduler.factor}, Patience: {scheduler.patience}")
+        # Note: ReduceLROnPlateau typically steps based on validation loss after an epoch.
+
+    elif lr_scheduler_type == "cosine_warmup":
+        # Cosine Annealing with Linear Warmup using SequentialLR
+        eta_min = 1e-5 # Minimum LR for cosine decay
+        warmup_steps = int(train_dataloader_len * 0.1)
+        cosine_steps = int(train_dataloader_len * 2)
+
+        print(f"  - Warmup Steps: ({warmup_steps} steps)")
+        print(f"  - Cosine Decay Steps: {cosine_steps}")
+        print(f"  - Eta Min: {eta_min}")
+
+        # Scheduler 1: Linear Warmup
+        # Starts from a factor (e.g., 0.01) and goes up to 1.0 over warmup_steps
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=0.01,
+            end_factor=1.0,
+            total_iters=warmup_steps
+        )
+
+        # Scheduler 2: Cosine Decay
+        # T_max is the number of steps for the decay phase
+        cosine_scheduler = CosineAnnealingWarmRestarts(
+            optimizer,
+            T_0=cosine_steps,
+            eta_min=eta_min
+        )
+
+        # Combine them: Use warmup for `warmup_steps`, then cosine for the rest
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_steps] # The step count at which to switch
+        )
+        # Note: SequentialLR requires stepping after *each batch/iteration*.
+
+    elif lr_scheduler_type == "onecycle":
+        # OneCycleLR scheduler
+        max_lr = optimizer.param_groups[0]['lr'] # Use optimizer's initial LR as max_lr
+        # Or get max_lr explicitly from config: scheduler_config.max_lr
+        total_steps = num_epochs * train_dataloader_len
+        pct_start = 0.3 # Percentage of cycle for warmup
+        anneal_strategy = 'cos' # 'cos' or 'linear'
+        final_div_factor = 1e4 # LR decays to max_lr / div_factor / final_div_factor
+
+        print(f"  - Max LR: {max_lr}")
+        print(f"  - Total Steps: {total_steps}")
+        print(f"  - Warmup Fraction (pct_start): {pct_start}")
+        print(f"  - Anneal Strategy: {anneal_strategy}")
+
+
+        scheduler = OneCycleLR(
+            optimizer,
+            max_lr=max_lr,
+            total_steps=total_steps,
+            pct_start=pct_start,
+            anneal_strategy=anneal_strategy,
+            final_div_factor=final_div_factor,
+            # You might want to configure momentum cycling if using SGD w/ momentum
+            # cycle_momentum=scheduler_config.get("cycle_momentum", True), # Example
+        )
+        # Note: OneCycleLR requires stepping after *each batch/iteration*.
+
     else:
-        scheduler = None
+        print(f"LR Scheduler: Type '{lr_scheduler_type}' not recognized or explicitly disabled.")
+        return None # Return None if type not found or disabled
 
     return scheduler
 
@@ -100,6 +185,9 @@ class Transform:
     def __call__(self, sample: InvERTSample) -> InvERTSample:
         sample['pseudosection'] = sample['pseudosection'].unsqueeze(0)
         sample['norm_log_resistivity_model'] = sample['norm_log_resistivity_model'].unsqueeze(0)
+        sample['JtJ_diag'] = sample['JtJ_diag'].unsqueeze(0)
+        # sample['JtJ_diag'] = torch.ones_like(sample['JtJ_diag'])
+        
         return sample
 
 
@@ -113,7 +201,7 @@ def main(config: Config):
     print(f"Using device: {device}")
 
     dataset_config: Config = config.dataset
-    dataset: LMDBDataset = LMDBDataset(Path(dataset_config.dataset_name), transform=Transform())
+    dataset: InvERTDataset = InvERTDataset(Path(dataset_config.dataset_name), transform=Transform())
     dataset_length: int = len(dataset)
 
     test_split: float = dataset_config.test_split
@@ -137,7 +225,6 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
-        worker_init_fn=worker_init_fn,
         prefetch_factor=8,
         collate_fn=collate_pad,
         pin_memory=True,
@@ -148,7 +235,6 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        worker_init_fn=worker_init_fn,
         prefetch_factor=8,
         collate_fn=collate_pad,
         pin_memory=True,
@@ -159,7 +245,6 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        worker_init_fn=worker_init_fn,
         prefetch_factor=8,
         collate_fn=collate_pad,
         pin_memory=True,
@@ -184,6 +269,7 @@ def main(config: Config):
     print(f"Initializing model and optimizer")
     model: Module = init_model(config).to(device)
     optimizer: Optimizer = init_optimizer(config, model)
+    scheduler: Optional[_LRScheduler] = init_scheduler(config, optimizer, len(train_dataloader))
 
     figure_folder = config.experiment.output_folder / f"figures"
     model_output_folder = figure_folder / f"model_output"
@@ -197,6 +283,7 @@ def main(config: Config):
 
     logging_params: LoggingParameters = LoggingParameters(
         loss_value=[],
+        running_loss_value=[],
         test_loss_value=[],
         print_points=print_points,
         print_points_list=sorted(list(print_points)),
@@ -204,6 +291,7 @@ def main(config: Config):
         figure_folder=figure_folder,
         model_output_folder_train=model_output_folder_train,
         model_output_folder_test=model_output_folder_test,
+        checkpoint_folder=checkpoint_folder,
     )
 
     # model = torch.compile(model) # /!\ Do not work with dynamic model or GPU too old !!!
@@ -217,8 +305,9 @@ def main(config: Config):
         train_dataloader,
         test_dataloader,
         optimizer,
+        scheduler,
         criterion,
-        device.type,
+        device,
         use_amp=True,
         logging_parameters=logging_params,
     )
