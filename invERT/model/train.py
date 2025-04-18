@@ -65,7 +65,7 @@ def plot_samples(
     fig.suptitle(f"{prefix} @ Step {current_step}: Pseudosection, Output, Target, Weights, Weighted Error", fontsize=14)
 
     for i in range(num_samples_to_plot):
-        psec_orig = psections_np[i].squeeze() # Use squeeze to remove dims of size 1
+        psec_orig = psections_np[i].squeeze()[0] # Use squeeze to remove dims of size 1
         target_orig = targets_np[i].squeeze()
         JtJ_diag_orig = JtJ_diag_np[i].squeeze()
         pred_orig = preds_np[i].squeeze()
@@ -207,7 +207,7 @@ def evaluate(
             # batch loss is sum of all loss per pixel divided by the weights on those pixels.
             batch_loss_sum = weighted_loss.sum()
             # weights_sum = weights_matrix.sum()
-            weights_sum = torch.sum(weights_matrix != 0).item() # Count non-zero weights
+            weights_sum = torch.sum(weights_matrix != 0) # Count non-zero weights
 
             if weights_sum > 0:
                 total_loss += batch_loss_sum.item()

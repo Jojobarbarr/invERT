@@ -170,9 +170,8 @@ def init_logging(config: Config,
     num_batches: int = len(train_dataloader)
     step_between_print: int = num_batches // num_print_points
     print_points: set[int] = {
-        i * step_between_print + (epoch * num_batches)
+        i * step_between_print
         for i in range(1, num_print_points)
-        for epoch in range(config.training.epochs)
     }
 
     return print_points
@@ -184,6 +183,14 @@ class Transform:
 
     def __call__(self, sample: InvERTSample) -> InvERTSample:
         sample['pseudosection'] = sample['pseudosection'].unsqueeze(0)
+
+        pseudosection = sample['pseudosection']
+        num_electrode_channel = torch.ones_like(pseudosection) * sample['num_electrode']
+        subsection_length_channel = torch.ones_like(pseudosection) * sample['subsection_length']
+        array_type_channel = sample['array_type']
+        array_type_channel = array_type_channel.view(-1, 1, 1).expand(-1, pseudosection.shape[1], pseudosection.shape[2])
+        sample['pseudosection'] = torch.cat((pseudosection, num_electrode_channel, subsection_length_channel, array_type_channel), dim=0)
+        
         sample['norm_log_resistivity_model'] = sample['norm_log_resistivity_model'].unsqueeze(0)
         sample['JtJ_diag'] = sample['JtJ_diag'].unsqueeze(0)
         # sample['JtJ_diag'] = torch.ones_like(sample['JtJ_diag'])

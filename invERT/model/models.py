@@ -621,7 +621,7 @@ class UNet(nn.Module):
     def __init__(self):
         super(UNet, self).__init__()
 
-        num_input_channels = 1
+        num_input_channels = 5
         features = [32, 64, 128]
         kernel_sizes = [7, 3, 3]
         strides = [1, 1, 1]
