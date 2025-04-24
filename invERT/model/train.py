@@ -9,19 +9,15 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg') # Set backend early, prevents GUI issues in non-GUI envs
 import matplotlib.pyplot as plt
-from pathlib import Path
 import logging
 
 from collections import deque
 
-from model.models import DynamicModel
-from data.data import InvERTSample
 from model.parameters_classes import LoggingParameters
 
-from torch.profiler import profile, record_function, ProfilerActivity, tensorboard_trace_handler
 
 # --- Constants ---
-NUM_PLOT_SAMPLES = 3
+NUM_PLOT_SAMPLES = 5
 
 
 # --- Helper Functions ---
@@ -82,6 +78,7 @@ def plot_samples(
         psec_width = num_electrodes - 3
         psec_height = num_electrodes // 2 - 1 if array_type else (num_electrodes - 1) // 3
         psec_cropped = psec_orig[:psec_height, :psec_width]
+        # psec_cropped = psec_orig[:, :]
         psec_cropped = np.where(psec_cropped == 0, np.nan, psec_cropped) # Replace zeros with NaN for visualization
 
         target_cropped = target_orig[r_min:r_max, c_min:c_max]
@@ -171,7 +168,7 @@ def plot_loss_curve(logging_parameters: LoggingParameters) -> None:
 # --- Evaluation Function ---
 
 def evaluate(
-    model: DynamicModel,
+    model,
     dataloader: DataLoader,
     criterion: Module,
     device: torch.device,
@@ -196,22 +193,25 @@ def evaluate(
 
     with torch.no_grad(): # Disable gradient calculations
         for batch in tqdm(dataloader, desc="Evaluating", leave=False, unit="batch"):
-            pseudosection_batch = batch['pseudosection'].to(device)
-            target_batch = batch['norm_log_resistivity_model'].to(device)
-            weights_matrix = batch['JtJ_diag'].to(device)
+            batch = {k: v.to(device) for k, v in batch.items()} # Move batch data to device
+            if not model.batch_processing:
+                batch_loss_sum, weights_sum = process_samples(batch, model, criterion)
+            else:
+                pseudosection_batch = batch['pseudosection']
+                target_batch = batch['norm_log_resistivity_model']
+                weights_matrix = batch['JtJ_diag']
 
-            with autocast(device.type, enabled=use_amp):
-                output_batch = model(pseudosection_batch, target_batch)
-                weighted_loss = weights_matrix * criterion(output_batch, target_batch)
+                with autocast(device.type, enabled=use_amp):
+                    output_batch = model(pseudosection_batch, target_batch)
+                    weighted_loss = weights_matrix * criterion(output_batch, target_batch)
 
-            # batch loss is sum of all loss per pixel divided by the weights on those pixels.
-            batch_loss_sum = weighted_loss.sum()
-            # weights_sum = weights_matrix.sum()
-            weights_sum = torch.sum(weights_matrix != 0) # Count non-zero weights
+                # batch loss is sum of all loss per pixel divided by the weights on those pixels.
+                batch_loss_sum = weighted_loss.sum()
+                # weights_sum = weights_matrix.sum()
+                weights_sum = torch.sum(weights_matrix != 0) # Count non-zero weights
 
-            if weights_sum > 0:
-                total_loss += batch_loss_sum.item()
-                total_elements += weights_sum.item()
+            total_loss += batch_loss_sum.item()
+            total_elements += weights_sum.item()
 
     model.train() # Set model back to training mode
     if total_elements == 0:
@@ -222,9 +222,48 @@ def evaluate(
 
 # --- Training Step Functions ---
 
+
+def process_samples(batch: dict[str, Tensor], model, criterion: Module) -> None:
+    batch_loss = 0.0
+    for sample_idx in range(len(batch)):
+        num_electrodes = int(batch['num_electrode'][sample_idx] * 72 + 24)
+        array_type = int(batch['array_type'][sample_idx].argmax().item())
+        
+        if array_type == 0:
+            pseudosection_dim = ((num_electrodes - 1) // 3, num_electrodes - 3)
+        elif array_type == 1:
+            pseudosection_dim = (num_electrodes // 2 - 1, num_electrodes - 3)
+        
+        
+        weights_matrix = batch['JtJ_diag'][sample_idx].unsqueeze(0)  # Add batch dimension
+
+        mask2d = weights_matrix.squeeze()
+
+        # 2) get all non-zero coordinates
+        ys, xs = torch.where(mask2d != 0)
+
+        # 3) find the extents
+        ymax = ys.max().item() + 1
+        xmax = xs.max().item() + 1
+
+        pseudosection = batch['pseudosection'][sample_idx].unsqueeze(0)  # Add batch dimension
+        pseudosection = pseudosection[:, :, :pseudosection_dim[0], :pseudosection_dim[1]]  # Crop to the target size
+        target = batch['norm_log_resistivity_model'][sample_idx].unsqueeze(0)  # Add batch dimension
+        target = target[:, :, :ymax, :xmax]  # Crop to the target size
+        weights_matrix = weights_matrix[:, :, :ymax, :xmax]  # Crop to the target size
+        output = model(pseudosection, target)
+
+        # Compute loss
+        weighted_loss = weights_matrix * criterion(output, target)
+        weights_sum = torch.numel(weights_matrix)
+        batch_loss = weighted_loss.sum() / weights_sum
+
+    return batch_loss, torch.tensor(weights_sum)
+
+
 def process_batch(
     batch: dict[str, Tensor], # Assuming InvERTSample is dict-like
-    model: DynamicModel,
+    model,
     criterion: Module,
     optimizer: Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
@@ -247,25 +286,27 @@ def process_batch(
     Returns:
         The calculated loss for this batch.
     """
-    pseudosection_batch = batch['pseudosection']
-    target_batch = batch['norm_log_resistivity_model']
-    weights_matrix = batch['JtJ_diag']
-
     optimizer.zero_grad()
 
     with autocast(device.type, enabled=use_amp):
-        output_batch = model(pseudosection_batch, target_batch)
-        weighted_loss = weights_matrix * criterion(output_batch, target_batch) # reduction='none'
-
-        # Apply mask and calculate effective batch loss
-        # weights_sum = weights_matrix.sum()
-        weights_sum = torch.sum(weights_matrix != 0).item() # Count non-zero weights
-
-        if weights_sum > 0:
-            batch_loss = weighted_loss.sum() / weights_sum
+        if not model.batch_processing:
+            batch_loss, _ = process_samples(batch, model, criterion)
         else:
-            # Handle cases with no valid targets in a batch if necessary
-            raise ValueError("No valid elements in batch for loss calculation.")
+            pseudosection_batch = batch['pseudosection']
+            target_batch = batch['norm_log_resistivity_model']
+            weights_matrix = batch['JtJ_diag']
+            output_batch = model(pseudosection_batch, target_batch)
+            weighted_loss = weights_matrix * criterion(output_batch, target_batch) # reduction='none'
+
+            # Apply mask and calculate effective batch loss
+            # weights_sum = weights_matrix.sum()
+            weights_sum = torch.sum(weights_matrix != 0).item() # Count non-zero weights
+
+            if weights_sum > 0:
+                batch_loss = weighted_loss.sum() / weights_sum
+            else:
+                # Handle cases with no valid targets in a batch if necessary
+                raise ValueError("No valid elements in batch for loss calculation.")
 
     # Scale the loss, perform backward pass, and update optimizer
     if use_amp:
@@ -283,7 +324,7 @@ def process_batch(
 
 
 def process_epoch(
-    model: DynamicModel,
+    model,
     running_loss: float,
     train_dataloader: DataLoader,
     test_dataloader: DataLoader,
@@ -313,7 +354,6 @@ def process_epoch(
     ):
         # Move training batch data to the target device
         batch = {k: v.to(device) for k, v in batch.items()}
-
         # Process the batch
         batch_loss = process_batch(
             batch, model, criterion, optimizer, scheduler, scaler, device, use_amp
@@ -324,6 +364,8 @@ def process_epoch(
 
         # --- Logging and Evaluation ---
         if batch_idx in logging_parameters.print_points or batch_idx == len(train_dataloader) - 1:
+            if batch_idx == 0:
+                continue # Skip first step
             current_step = (epoch - 1) * len(train_dataloader) + batch_idx # Global step
 
             # 1. Calculate Average Test Loss over the entire test set
@@ -352,7 +394,8 @@ def process_epoch(
                 model.eval() # Switch to eval mode for prediction
                 with torch.no_grad():
                     with autocast(device.type, enabled=use_amp):
-                        test_outputs = model(persistent_test_batch['pseudosection'], persistent_test_batch['norm_log_resistivity_model'])
+                        if model.batch_processing:
+                            test_outputs = model(persistent_test_batch['pseudosection'], persistent_test_batch['norm_log_resistivity_model'])
                 model.train() # Switch back
 
                 # Prepare data for plotting (move needed tensors to CPU)
@@ -396,7 +439,7 @@ def process_epoch(
 
 def train(
     num_epochs: int,
-    model: DynamicModel,
+    model,
     train_dataloader: DataLoader,
     test_dataloader: DataLoader,
     optimizer: Optimizer,

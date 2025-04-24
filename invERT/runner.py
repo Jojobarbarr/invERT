@@ -5,7 +5,7 @@ from typing import Type, Optional
 import torch
 from torch import device as set_device
 from torch.cuda import is_available as cuda_is_available
-from torch.optim import Adam, SGD, RMSprop
+from torch.optim import AdamW, SGD, RMSprop
 from torch.optim.optimizer import Optimizer
 from torch.nn import Module, MSELoss, L1Loss
 from torch.utils.data import DataLoader, random_split
@@ -19,20 +19,20 @@ from torch.optim.lr_scheduler import (
 )
 
 from config.configuration import Config
-from model.models import UNet, MLP_huge
+from model.models import UNet, UNetAttention, UNet_basic
 from model.train import train
 from model.parameters_classes import LoggingParameters
 from data.data import (
     InvERTDataset,
     InvERTSample,
     collate_pad,
-    lmdb_collate_fn,
-    lmdb_collate_fn_per_cat,
+    collate_per_sample
 )
 
 
 def init_model(config) -> Module:
     model = UNet()
+    # model = UNetAttention()
     # model = MLP_huge()
     return model
 
@@ -46,7 +46,7 @@ def init_optimizer(config: Config,
 
     optimizer: Optimizer
     if optimizer_config.type == "adam":
-        optimizer = Adam(
+        optimizer = AdamW(
             model.parameters(),
             lr=initial_lr,
         )
@@ -96,8 +96,8 @@ def init_scheduler(config: Config,
     elif lr_scheduler_type == "cosine_warmup":
         # Cosine Annealing with Linear Warmup using SequentialLR
         eta_min = 1e-5 # Minimum LR for cosine decay
-        warmup_steps = int(train_dataloader_len * 0.1)
-        cosine_steps = int(train_dataloader_len * 2)
+        warmup_steps = int(train_dataloader_len * 0.4)
+        cosine_steps = int(train_dataloader_len * 1)
 
         print(f"  - Warmup Steps: ({warmup_steps} steps)")
         print(f"  - Cosine Decay Steps: {cosine_steps}")
@@ -117,6 +117,7 @@ def init_scheduler(config: Config,
         cosine_scheduler = CosineAnnealingWarmRestarts(
             optimizer,
             T_0=cosine_steps,
+            T_mult=2,
             eta_min=eta_min
         )
 
@@ -171,7 +172,7 @@ def init_logging(config: Config,
     step_between_print: int = num_batches // num_print_points
     print_points: set[int] = {
         i * step_between_print
-        for i in range(1, num_print_points)
+        for i in range(0, num_print_points + 1)
     }
 
     return print_points
@@ -182,9 +183,7 @@ class Transform:
         pass
 
     def __call__(self, sample: InvERTSample) -> InvERTSample:
-        sample['pseudosection'] = sample['pseudosection'].unsqueeze(0)
-
-        pseudosection = sample['pseudosection']
+        pseudosection = sample['pseudosection'].unsqueeze(0)
         num_electrode_channel = torch.ones_like(pseudosection) * sample['num_electrode']
         subsection_length_channel = torch.ones_like(pseudosection) * sample['subsection_length']
         array_type_channel = sample['array_type']
@@ -206,6 +205,10 @@ def main(config: Config):
     else:
         device = set_device("cpu")
     print(f"Using device: {device}")
+
+    
+    print(f"Initializing model")
+    model: Module = init_model(config).to(device)
 
     dataset_config: Config = config.dataset
     dataset: InvERTDataset = InvERTDataset(Path(dataset_config.dataset_name), transform=Transform())
@@ -232,7 +235,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
-        prefetch_factor=8,
+        prefetch_factor=4,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -242,7 +245,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        prefetch_factor=8,
+        prefetch_factor=4,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -252,7 +255,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        prefetch_factor=8,
+        prefetch_factor=4,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -273,8 +276,7 @@ def main(config: Config):
     print_points = init_logging(config, train_dataloader)
 
     # Initialize or reset
-    print(f"Initializing model and optimizer")
-    model: Module = init_model(config).to(device)
+    print(f"Initializing optimizer")
     optimizer: Optimizer = init_optimizer(config, model)
     scheduler: Optional[_LRScheduler] = init_scheduler(config, optimizer, len(train_dataloader))
 
@@ -293,7 +295,7 @@ def main(config: Config):
         running_loss_value=[],
         test_loss_value=[],
         print_points=print_points,
-        print_points_list=sorted(list(print_points)),
+        print_points_list=[],
         batch_size=dataset_config.batch_size,
         figure_folder=figure_folder,
         model_output_folder_train=model_output_folder_train,

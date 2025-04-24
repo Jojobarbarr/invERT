@@ -1,7 +1,7 @@
 {
   "experiment": {
     "experiment_name": {
-      "value": "weighted_bs_32",
+      "value": "padded",
       "type": "string",
     },
     "output_folder": {
@@ -11,11 +11,11 @@
   },
   "training": {
     "epochs": {
-      "value": 10,
+      "value": 50,
       "type": "int",
     },
     "learning_rate": {
-      "value": 0.001,
+      "value": 0.0001,
       "type": "float",
     },
     "optimizer": {
@@ -51,11 +51,11 @@
       "type": "string",
     },
     "test_split": {
-      "value": 0.1,
+      "value": 0.07,
       "type": "float",
     },
     "validation_split": {
-      "value": 0.001 ,
+      "value": 0.0 ,
       "type": "float",
     },
     "batch_size": {
