@@ -125,11 +125,11 @@ def save_new_npz(in_file_path, out_file_path, overall_stat_num_electrode, overal
         subsection_length = (subsection_length - overall_stat_subsection_length["min"]) / (overall_stat_subsection_length["max"] - overall_stat_subsection_length["min"])
         pseudosection = (pseudosection - overall_stat_pseudosection["min"]) / (overall_stat_pseudosection["max"] - overall_stat_pseudosection["min"])
         JtJ_diag = (JtJ_diag - min_JtJ_diag) / (max_JtJ_diag - min_JtJ_diag)
-        np.clip(JtJ_diag, 0.05, 1, out=JtJ_diag)
+        # np.clip(JtJ_diag, 0.05, 1, out=JtJ_diag)
 
-        pseudosection = cv2.resize(pseudosection, (93, 49), interpolation=cv2.INTER_LINEAR)
-        norm_log_resistivity_model = cv2.resize(norm_log_resistivity_model, (256, 192), interpolation=cv2.INTER_LINEAR)
-        JtJ_diag = cv2.resize(JtJ_diag, (256, 192), interpolation=cv2.INTER_LINEAR)
+        # pseudosection = cv2.resize(pseudosection, (93, 49), interpolation=cv2.INTER_LINEAR)
+        # norm_log_resistivity_model = cv2.resize(norm_log_resistivity_model, (256, 192), interpolation=cv2.INTER_LINEAR)
+        # JtJ_diag = cv2.resize(JtJ_diag, (256, 192), interpolation=cv2.INTER_LINEAR)
         sample_out = {
             'num_electrode': num_electrode,
             'subsection_length': subsection_length,
@@ -147,9 +147,9 @@ def save_new_npz(in_file_path, out_file_path, overall_stat_num_electrode, overal
 
 
 if __name__ == "__main__":
-    in_path = Path("/mnt/ensg/tout_le_monde/Basile/dataset_sensitivity_5_5")
+    in_path = Path("/mnt/ensg/tout_le_monde/Basile/dataset_sensitivity_5_5_cosine_tape")
 
-    out_path = in_path / "samples_normalized_ps_resized"
+    out_path = in_path / "samples_norm"
     out_path.mkdir(parents=True, exist_ok=True)
 
     samples_path = in_path / "samples"

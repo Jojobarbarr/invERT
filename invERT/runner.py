@@ -32,6 +32,7 @@ from data.data import (
 
 def init_model(config) -> Module:
     model = UNet()
+    # model = VAE()
     # model = UNetAttention()
     # model = MLP_huge()
     return model
@@ -45,7 +46,7 @@ def init_optimizer(config: Config,
     optimizer_config: Config = config.training.optimizer
 
     optimizer: Optimizer
-    if optimizer_config.type == "adam":
+    if optimizer_config.type == "adamw":
         optimizer = AdamW(
             model.parameters(),
             lr=initial_lr,
@@ -96,8 +97,8 @@ def init_scheduler(config: Config,
     elif lr_scheduler_type == "cosine_warmup":
         # Cosine Annealing with Linear Warmup using SequentialLR
         eta_min = 1e-5 # Minimum LR for cosine decay
-        warmup_steps = int(train_dataloader_len * 0.4)
-        cosine_steps = int(train_dataloader_len * 1)
+        warmup_steps = int(train_dataloader_len * 0.3)
+        cosine_steps = int(train_dataloader_len * 2)
 
         print(f"  - Warmup Steps: ({warmup_steps} steps)")
         print(f"  - Cosine Decay Steps: {cosine_steps}")
@@ -107,7 +108,7 @@ def init_scheduler(config: Config,
         # Starts from a factor (e.g., 0.01) and goes up to 1.0 over warmup_steps
         warmup_scheduler = LinearLR(
             optimizer,
-            start_factor=0.01,
+            start_factor=0.001,
             end_factor=1.0,
             total_iters=warmup_steps
         )
@@ -172,10 +173,11 @@ def init_logging(config: Config,
     step_between_print: int = num_batches // num_print_points
     print_points: set[int] = {
         i * step_between_print
-        for i in range(0, num_print_points + 1)
+        for i in range(0, num_print_points)
     }
 
     return print_points
+
 
 
 class Transform:
@@ -212,6 +214,7 @@ def main(config: Config):
 
     dataset_config: Config = config.dataset
     dataset: InvERTDataset = InvERTDataset(Path(dataset_config.dataset_name), transform=Transform())
+    # dataset = dataset[:128]
     dataset_length: int = len(dataset)
 
     test_split: float = dataset_config.test_split
@@ -235,7 +238,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=True,
         num_workers=8,
-        prefetch_factor=4,
+        prefetch_factor=2,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -245,7 +248,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        prefetch_factor=4,
+        prefetch_factor=2,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -255,7 +258,7 @@ def main(config: Config):
         batch_size=dataset_config.batch_size,
         shuffle=False,
         num_workers=8,
-        prefetch_factor=4,
+        prefetch_factor=1,
         collate_fn=collate_pad,
         pin_memory=True,
         persistent_workers=True,
@@ -271,6 +274,7 @@ def main(config: Config):
 
     criterion_options: dict[str, Type[Module]] = {"mse": MSELoss, "l1": L1Loss}
     criterion: Module = criterion_options[training_config.loss_function](reduction="none")
+    # criterion = WeightedMSEWithVariationLoss(0.25)
 
     # Logging initialization
     print_points = init_logging(config, train_dataloader)
@@ -285,10 +289,12 @@ def main(config: Config):
     model_output_folder_train = model_output_folder / f"train"
     model_output_folder_test = model_output_folder / f"test"
     checkpoint_folder = model_output_folder / f"checkpoints"
+    validation_folder = figure_folder / f"validation"
     model_output_folder_train.mkdir(parents=True, exist_ok=True)
     model_output_folder_test.mkdir(parents=True, exist_ok=True)
     checkpoint_folder.mkdir(parents=True, exist_ok=True)
     figure_folder.mkdir(parents=True, exist_ok=True)
+    validation_folder.mkdir(parents=True, exist_ok=True)
 
     logging_params: LoggingParameters = LoggingParameters(
         loss_value=[],
@@ -301,6 +307,7 @@ def main(config: Config):
         model_output_folder_train=model_output_folder_train,
         model_output_folder_test=model_output_folder_test,
         checkpoint_folder=checkpoint_folder,
+        validation_folder=validation_folder,
     )
 
     # model = torch.compile(model) # /!\ Do not work with dynamic model or GPU too old !!!
@@ -313,6 +320,7 @@ def main(config: Config):
         model,
         train_dataloader,
         test_dataloader,
+        val_dataloader,
         optimizer,
         scheduler,
         criterion,

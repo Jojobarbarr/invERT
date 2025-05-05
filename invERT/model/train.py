@@ -10,11 +10,13 @@ import matplotlib
 matplotlib.use('Agg') # Set backend early, prevents GUI issues in non-GUI envs
 import matplotlib.pyplot as plt
 import logging
+import torch.nn.functional as F
+from typing import Dict
 
 from collections import deque
 
 from model.parameters_classes import LoggingParameters
-
+from model.validation import final_validation
 
 # --- Constants ---
 NUM_PLOT_SAMPLES = 5
@@ -35,9 +37,7 @@ def tensors_to_numpy_list(tensor_list: list[Tensor]) -> list[np.ndarray]:
     """
     result = []
     for tensor in tensor_list:
-        # Check if tensor contains any non-zero elements before converting
-        if torch.any(tensor != 0):
-            result.append(tensor.cpu().numpy())
+        result.append(tensor.cpu().numpy())
     return result
 
 # --- Plotting Functions ---
@@ -55,9 +55,9 @@ def plot_samples(
 ) -> None:
     # Ensure we have masks corresponding to other data
     num_samples_to_plot = NUM_PLOT_SAMPLES
-    num_columns = 5
+    num_columns = 6
 
-    fig, axs = plt.subplots(num_samples_to_plot, num_columns, figsize=(4 * num_columns, 4 * num_samples_to_plot), squeeze=False)
+    fig, axs = plt.subplots(num_samples_to_plot, num_columns, figsize=(5 * num_columns, 4 * num_samples_to_plot), squeeze=False)
     fig.suptitle(f"{prefix} @ Step {current_step}: Pseudosection, Output, Target, Weights, Weighted Error", fontsize=14)
 
     for i in range(num_samples_to_plot):
@@ -126,6 +126,15 @@ def plot_samples(
         im4 = axs[i, 4].imshow(weighted_error_cropped, cmap=cmap_error, vmin=error_vmin, vmax=error_vmax)
         axs[i, 4].set_title("Weighted Error")
         fig.colorbar(im4, ax=axs[i, 4])
+
+        # Plot Error (Log Scale)
+        error_vmin = np.nanmin(weighted_error_cropped) + 1e-10
+        error_vmax = np.nanmax(weighted_error_cropped)
+        norm = matplotlib.colors.LogNorm(vmin=1e-5, vmax=error_vmax)
+        im4 = axs[i, 5].imshow(weighted_error_cropped, cmap=cmap_error, norm=norm)
+        axs[i, 5].set_title("Weighted Error (Log)")
+        fig.colorbar(im4, ax=axs[i, 5], norm=norm)
+
     fig.tight_layout()
     if prefix == "Train":
         plot_filename = logging_parameters.model_output_folder_train / f"output_step_{current_step}_{prefix.lower()}.png"
@@ -194,9 +203,8 @@ def evaluate(
     with torch.no_grad(): # Disable gradient calculations
         for batch in tqdm(dataloader, desc="Evaluating", leave=False, unit="batch"):
             batch = {k: v.to(device) for k, v in batch.items()} # Move batch data to device
-            if not model.batch_processing:
-                batch_loss_sum, weights_sum = process_samples(batch, model, criterion)
-            else:
+            
+            if model.batch_processing:
                 pseudosection_batch = batch['pseudosection']
                 target_batch = batch['norm_log_resistivity_model']
                 weights_matrix = batch['JtJ_diag']
@@ -204,63 +212,40 @@ def evaluate(
                 with autocast(device.type, enabled=use_amp):
                     output_batch = model(pseudosection_batch, target_batch)
                     weighted_loss = weights_matrix * criterion(output_batch, target_batch)
-
                 # batch loss is sum of all loss per pixel divided by the weights on those pixels.
-                batch_loss_sum = weighted_loss.sum()
-                # weights_sum = weights_matrix.sum()
-                weights_sum = torch.sum(weights_matrix != 0) # Count non-zero weights
+                batch_loss_sum = weighted_loss.sum().item()
+                current_batch_weights_count = weights_matrix.sum().item()
+                # current_batch_weights_count = torch.sum(weights_matrix != 0) # Count non-zero weights
+            else:
+                pseudosection_batch = batch['pseudosection']
+                target_batch = batch['norm_log_resistivity_model']
+                weights_matrix = batch['JtJ_diag']
+                pseudo_masks = batch['pseudo_masks']
+                target_masks = batch['target_masks']
+                batch_loss_sum = 0.0
+                current_batch_weights_count = 0
+                for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection_batch, target_batch, weights_matrix, pseudo_masks, target_masks):
+                    pseudo_h, pseudo_w = pseudo_mask.tolist()
+                    target_h, target_w = target_mask.tolist()
 
-            total_loss += batch_loss_sum.item()
-            total_elements += weights_sum.item()
+                    pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)
+                    target = target[..., :target_h, :target_w].unsqueeze(0)
+                    weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)
+                    with autocast(device.type, enabled=use_amp):
+                        output = model(pseudosection, target)
+                        weighted_loss = weight_matrix * criterion(output, target)
+                    batch_loss_sum += weighted_loss.sum().item()
+                    current_batch_weights_count += weight_matrix.sum().item()
 
-    model.train() # Set model back to training mode
-    if total_elements == 0:
-        logging.warning("No valid elements found during evaluation. Returning 0 loss.")
-        return 0.0
+            total_loss += batch_loss_sum
+            total_elements += current_batch_weights_count
+
+    model.train()
     return total_loss / total_elements
 
 
+
 # --- Training Step Functions ---
-
-
-def process_samples(batch: dict[str, Tensor], model, criterion: Module) -> None:
-    batch_loss = 0.0
-    for sample_idx in range(len(batch)):
-        num_electrodes = int(batch['num_electrode'][sample_idx] * 72 + 24)
-        array_type = int(batch['array_type'][sample_idx].argmax().item())
-        
-        if array_type == 0:
-            pseudosection_dim = ((num_electrodes - 1) // 3, num_electrodes - 3)
-        elif array_type == 1:
-            pseudosection_dim = (num_electrodes // 2 - 1, num_electrodes - 3)
-        
-        
-        weights_matrix = batch['JtJ_diag'][sample_idx].unsqueeze(0)  # Add batch dimension
-
-        mask2d = weights_matrix.squeeze()
-
-        # 2) get all non-zero coordinates
-        ys, xs = torch.where(mask2d != 0)
-
-        # 3) find the extents
-        ymax = ys.max().item() + 1
-        xmax = xs.max().item() + 1
-
-        pseudosection = batch['pseudosection'][sample_idx].unsqueeze(0)  # Add batch dimension
-        pseudosection = pseudosection[:, :, :pseudosection_dim[0], :pseudosection_dim[1]]  # Crop to the target size
-        target = batch['norm_log_resistivity_model'][sample_idx].unsqueeze(0)  # Add batch dimension
-        target = target[:, :, :ymax, :xmax]  # Crop to the target size
-        weights_matrix = weights_matrix[:, :, :ymax, :xmax]  # Crop to the target size
-        output = model(pseudosection, target)
-
-        # Compute loss
-        weighted_loss = weights_matrix * criterion(output, target)
-        weights_sum = torch.numel(weights_matrix)
-        batch_loss = weighted_loss.sum() / weights_sum
-
-    return batch_loss, torch.tensor(weights_sum)
-
-
 def process_batch(
     batch: dict[str, Tensor], # Assuming InvERTSample is dict-like
     model,
@@ -289,24 +274,41 @@ def process_batch(
     optimizer.zero_grad()
 
     with autocast(device.type, enabled=use_amp):
-        if not model.batch_processing:
-            batch_loss, _ = process_samples(batch, model, criterion)
-        else:
-            pseudosection_batch = batch['pseudosection']
-            target_batch = batch['norm_log_resistivity_model']
-            weights_matrix = batch['JtJ_diag']
+        
+        pseudosection_batch = batch['pseudosection']
+        target_batch = batch['norm_log_resistivity_model']
+        weights_matrix = batch['JtJ_diag']
+        if model.batch_processing:
             output_batch = model(pseudosection_batch, target_batch)
             weighted_loss = weights_matrix * criterion(output_batch, target_batch) # reduction='none'
-
             # Apply mask and calculate effective batch loss
             # weights_sum = weights_matrix.sum()
             weights_sum = torch.sum(weights_matrix != 0).item() # Count non-zero weights
+            batch_loss = weighted_loss.sum() / weights_sum
+        else:
+            total_weighted_loss_sum = 0.0
+            total_weights_count = 0.0
+            pseudo_masks = batch['pseudo_masks']
+            target_masks = batch['target_masks']
+            for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection_batch, target_batch, weights_matrix, pseudo_masks, target_masks):
+                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                target_h, target_w = target_mask.tolist()
 
-            if weights_sum > 0:
-                batch_loss = weighted_loss.sum() / weights_sum
-            else:
-                # Handle cases with no valid targets in a batch if necessary
-                raise ValueError("No valid elements in batch for loss calculation.")
+                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)  # Crop to the target size
+                target = target[..., :target_h, :target_w].unsqueeze(0)  # Crop to the target size
+                weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)  # Crop to the target size
+
+                output = model(pseudosection, target)
+                weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+
+                current_sample_loss_sum = weighted_loss.sum()
+                # current_sample_weights_count = torch.numel(weight_matrix)
+                current_sample_weights_sum = weight_matrix.sum().item()
+
+                total_weighted_loss_sum += current_sample_loss_sum
+                total_weights_count += current_sample_weights_sum
+            batch_loss = total_weighted_loss_sum / total_weights_count
+            
 
     # Scale the loss, perform backward pass, and update optimizer
     if use_amp:
@@ -396,13 +398,35 @@ def process_epoch(
                     with autocast(device.type, enabled=use_amp):
                         if model.batch_processing:
                             test_outputs = model(persistent_test_batch['pseudosection'], persistent_test_batch['norm_log_resistivity_model'])
+                        else:
+                            pseudosection = persistent_test_batch['pseudosection']
+                            target = persistent_test_batch['norm_log_resistivity_model']
+                            weights_matrix = persistent_test_batch['JtJ_diag']
+                            pseudo_masks = persistent_test_batch['pseudo_masks']
+                            target_masks = persistent_test_batch['target_masks']
+                            test_outputs = []
+
+                            for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection, target, weights_matrix, pseudo_masks, target_masks):
+                                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                                target_h, target_w = target_mask.tolist()
+
+                                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)  # Add batch dimension
+                                target = target[..., :target_h, :target_w].unsqueeze(0)  # Add batch dimension
+                                output = model(pseudosection, target)
+
+                                test_outputs.append(output.cpu().numpy())
+
+                                
                 model.train() # Switch back
 
                 # Prepare data for plotting (move needed tensors to CPU)
                 psec_test_np = tensors_to_numpy_list(persistent_test_batch['pseudosection'].cpu())
                 target_test_np = tensors_to_numpy_list(persistent_test_batch['norm_log_resistivity_model'].cpu())
                 JtJ_diag_test_np = tensors_to_numpy_list(persistent_test_batch['JtJ_diag'].cpu())
-                output_test_np = tensors_to_numpy_list(test_outputs.cpu())
+                if isinstance(test_outputs, Tensor):
+                    output_test_np = tensors_to_numpy_list(test_outputs.cpu())
+                else:
+                    output_test_np = test_outputs
                 test_num_electrodes_list = persistent_test_batch['num_electrode'].cpu().numpy()
                 test_array_type_list = [torch.argmax(array_type).cpu().numpy() for array_type in persistent_test_batch['array_type']]
 
@@ -417,9 +441,29 @@ def process_epoch(
                 model.eval()
                 with torch.no_grad():
                     with autocast(device.type, enabled=use_amp):
-                        train_outputs_plot = model(batch['pseudosection'], batch['norm_log_resistivity_model'])
+                        if model.batch_processing:
+                            train_outputs_plot = model(batch['pseudosection'], batch['norm_log_resistivity_model'])
+                        else:
+                            pseudosection = batch['pseudosection']
+                            target = batch['norm_log_resistivity_model']
+                            pseudo_masks = batch['pseudo_masks']
+                            target_masks = batch['target_masks']
+
+                            train_outputs_plot = []
+
+                            for pseudosection, target, pseudo_mask, target_mask in zip(pseudosection, target, pseudo_masks, target_masks):
+                                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                                target_h, target_w = target_mask.tolist()
+
+                                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)
+                                target = target[..., :target_h, :target_w].unsqueeze(0)
+                                output = model(pseudosection, target)
+                                train_outputs_plot.append(output.cpu().numpy())
                 model.train()
-                output_train_np = tensors_to_numpy_list(train_outputs_plot.cpu())
+                if isinstance(train_outputs_plot, Tensor):
+                    output_train_np = tensors_to_numpy_list(train_outputs_plot.cpu())
+                else:
+                    output_train_np = train_outputs_plot
 
 
                 plot_samples(
@@ -435,6 +479,7 @@ def process_epoch(
             plot_loss_curve(logging_parameters)
 
 
+
 # --- Main Training Function ---
 
 def train(
@@ -442,6 +487,7 @@ def train(
     model,
     train_dataloader: DataLoader,
     test_dataloader: DataLoader,
+    validation_dataloader: DataLoader,
     optimizer: Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     criterion: Module,
@@ -513,3 +559,16 @@ def train(
         print(f"Final Test Loss (last avg): {logging_parameters.test_loss_value[-1]:.5f}")
     else:
         print("No loss values were logged during training.")
+    
+    final_metrics = final_validation(
+        model,
+        validation_dataloader, # Use the same dataloader used for testing during training
+        criterion,
+        device,
+        amp_enabled,
+        logging_parameters
+    )
+
+
+    # You can save final_metrics to a file or log them further
+    print(f"Final validation complete. Metrics: {final_metrics}")

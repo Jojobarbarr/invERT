@@ -164,7 +164,7 @@ def resize(sample: np.ndarray, new_shape: tuple[int, int]) -> np.ndarray:
 
 def detransform(log_res: np.ndarray) -> np.ndarray:
     # Ensure input is float for exponentiation
-    return (2 * 10 ** (4 * log_res.astype(np.float64))).astype(log_res.dtype)
+    return np.exp(log_res * np.log(50000)).astype(log_res.dtype)
 
 
 def schlumberger_array(nbr_electrodes: int,
@@ -454,8 +454,14 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
     rock_classes, inv = np.unique(resized_section, return_inverse=True)
     # Create a random normalized log resistivity value for each rock class
     norm_log_res_values: np.ndarray[np.float32] = np.random.uniform(
-        0, 1, size=len(rock_classes)
+        0, np.log(50000), size=len(rock_classes)
     ).astype(np.float32)
+
+    for idx in range(len(norm_log_res_values)):
+        while np.random.uniform(0, 1) > custom_log_taper(norm_log_res_values[idx]):
+            norm_log_res_values[idx] = np.random.uniform(0, np.log(50000))
+        norm_log_res_values[idx] /= np.log(50000) # Normalize to [0, 1]
+
     norm_log_resistivity_model = norm_log_res_values[inv].reshape(
         resized_section.shape
     )
@@ -463,6 +469,37 @@ def assign_resistivity(resized_section: np.ndarray[np.int8],
     resistivity_model = detransform(norm_log_resistivity_model)
     return norm_log_resistivity_model, resistivity_model
 
+
+def custom_log_taper(logx):
+    """
+    Custom taper function based on ln(x):
+      - 0 for x < 1
+      - Ramp up to 1 from ln(1) to ln(10)
+      - 1 from ln(10) to ln(2000)
+      - Ramp down to 0 from ln(2000) to ln(50000)
+    """
+    logx = np.asarray(logx)
+    y = np.zeros_like(logx)
+
+    # Define log boundaries
+    x_p_min_1 = np.log(1)
+    x_p_max_1 = np.log(20)
+    x_p_max_2 = np.log(2000)
+    x_p_min_2 = np.log(50000)
+
+    # Ramp up: x_p_min_1 to x_p_max_1
+    ramp_up = (logx >= x_p_min_1) & (logx < x_p_max_1)
+    y[ramp_up] = 0.5 * (1 - np.cos(np.pi * (logx[ramp_up] - x_p_min_1) / (x_p_max_1 - x_p_min_1)))
+
+    # Plateau: x_p_max_1 to x_p_max_2
+    plateau = (logx >= x_p_max_1) & (logx < x_p_max_2)
+    y[plateau] = 1.0
+
+    # Ramp down: x_p_max_2 to x_p_min_2
+    ramp_down = (logx >= x_p_max_2) & (logx < x_p_min_2)
+    y[ramp_down] = 0.5 * (1 + np.cos(np.pi * (logx[ramp_down] - x_p_max_2) / (x_p_min_2 - x_p_max_2)))
+
+    return y
 
 def create_surveys(resistivity_model: np.ndarray[np.float32],
                    NUM_ELECTRODES: int,
@@ -529,7 +566,7 @@ def process_sample(section_data: Tuple[int, np.ndarray], # Pass index and data t
         resized_length: int = (NUM_ELECTRODES - 1) * space_between_electrodes + 2 * LATERAL_PADDING
         # ----- 2. Extract subsection -----
         # Ensure subsection_length is reasonable relative to section width
-        max_subsection_len = section.shape[1] if section.ndim == 2 and section.shape[1] > NUM_ELECTRODES else NUM_ELECTRODES + 1
+        max_subsection_len = section.shape[1]
         min_subsection_len = NUM_ELECTRODES
         if min_subsection_len >= max_subsection_len:
                 subsection_length = min_subsection_len

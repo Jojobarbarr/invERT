@@ -64,7 +64,9 @@ class InvERTDataset(Dataset):
 
 
     def __getitem__(self,
-                    index: int) -> InvERTSample:
+                    index: int | slice) -> InvERTSample:
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(self.length))]
         if index < 0:
             index = self.length + index
         if not 0 <= index < self.length:
@@ -101,11 +103,15 @@ def collate_pad(batch: list[InvERTSample]):
     padded_targets = []
     padded_JtJ_diag = []
 
+    pseudo_masks = []
+    target_masks = []
+
     pad_value = 0
 
     for pseudo, target, JtJ_diag in zip(pseudo_list, target_list, JtJ_diag_list):
         # Pad pseudosection (example assumes CHW or HW format, adjust padding dims accordingly)
         h, w = pseudo.shape[-2:]
+        pseudo_masks.append(torch.tensor([h, w], dtype=torch.long))
         # (padding_left, padding_right, padding_top, padding_bottom)
         padding_pseudo = (0, max_w_pseudo - w, 0, max_h_pseudo - h)
         padded_p = torch.nn.functional.pad(pseudo, padding_pseudo, mode='constant', value=pad_value)
@@ -114,6 +120,7 @@ def collate_pad(batch: list[InvERTSample]):
 
         # Pad target
         h, w = target.shape[-2:]
+        target_masks.append(torch.tensor([h, w], dtype=torch.long))
         padding_target = (0, max_w_target - w, 0, max_h_target - h)
         padded_t = torch.nn.functional.pad(target, padding_target, mode='constant', value=pad_value)
 
@@ -138,58 +145,7 @@ def collate_pad(batch: list[InvERTSample]):
         'array_type': torch.stack([sample['array_type'] for sample in batch]),
         'num_electrode': torch.stack([sample['num_electrode'] for sample in batch]),
         'subsection_length': torch.stack([sample['subsection_length'] for sample in batch]),
+        'pseudo_masks': torch.stack(pseudo_masks),
+        'target_masks': torch.stack(target_masks),
     }
 
-
-def collate_pad(batch: list[InvERTSample]):
-    pseudo_list = [sample['pseudosection'] for sample in batch]
-    target_list = [sample['norm_log_resistivity_model'] for sample in batch]
-    JtJ_diag_list = [sample['JtJ_diag'] for sample in batch]
-
-    max_h_pseudo = max(p.shape[-2] for p in pseudo_list)
-    max_w_pseudo = max(p.shape[-1] for p in pseudo_list)
-    max_h_target = max(t.shape[-2] for t in target_list)
-    max_w_target = max(t.shape[-1] for t in target_list)
-
-    padded_pseudos = []
-    padded_targets = []
-    padded_JtJ_diag = []
-
-    pad_value = 0
-
-    for pseudo, target, JtJ_diag in zip(pseudo_list, target_list, JtJ_diag_list):
-        # Pad pseudosection (example assumes CHW or HW format, adjust padding dims accordingly)
-        h, w = pseudo.shape[-2:]
-        # (padding_left, padding_right, padding_top, padding_bottom)
-        padding_pseudo = (0, max_w_pseudo - w, 0, max_h_pseudo - h)
-        padded_p = torch.nn.functional.pad(pseudo, padding_pseudo, mode='constant', value=pad_value)
-
-        padded_pseudos.append(padded_p)
-
-        # Pad target
-        h, w = target.shape[-2:]
-        padding_target = (0, max_w_target - w, 0, max_h_target - h)
-        padded_t = torch.nn.functional.pad(target, padding_target, mode='constant', value=pad_value)
-
-        padded_targets.append(padded_t)
-
-        # Pad JtJ_diag
-        h, w = JtJ_diag.shape[-2:]
-        padding_JtJ_diag = (0, max_w_target - w, 0, max_h_target - h)
-        padded_s = torch.nn.functional.pad(JtJ_diag, padding_JtJ_diag, mode='constant', value=pad_value)
-
-        padded_JtJ_diag.append(padded_s)
-
-    # Stack along the batch dimension
-    batched_pseudos = torch.stack(padded_pseudos, dim=0)
-    batched_targets = torch.stack(padded_targets, dim=0)
-    batched_JtJ_diag = torch.stack(padded_JtJ_diag, dim=0)
-
-    return {
-        'pseudosection': batched_pseudos,
-        'norm_log_resistivity_model': batched_targets,
-        'JtJ_diag': batched_JtJ_diag,
-        'array_type': torch.stack([sample['array_type'] for sample in batch]),
-        'num_electrode': torch.stack([sample['num_electrode'] for sample in batch]),
-        'subsection_length': torch.stack([sample['subsection_length'] for sample in batch]),
-    }

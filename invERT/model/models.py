@@ -101,18 +101,15 @@ class UNet_basic(nn.Module):
 
 
 
-
-
-
 class DoubleConv(nn.Module):
     def __init__(self, num_in_channels, num_out_channels, kernel_size=3, stride=1, padding=1, dilation=1):
         super(DoubleConv, self).__init__()
         self.double_conv = nn.Sequential(
             nn.Conv2d(num_in_channels, num_out_channels, kernel_size, stride, padding, dilation, bias=False),
-            nn.BatchNorm2d(num_out_channels),
+            nn.InstanceNorm2d(num_out_channels),
             nn.LeakyReLU(negative_slope=0.01, inplace=True),
             nn.Conv2d(num_out_channels, num_out_channels, kernel_size, stride, padding, dilation, bias=False),
-            nn.BatchNorm2d(num_out_channels),
+            nn.InstanceNorm2d(num_out_channels),
             nn.LeakyReLU(negative_slope=0.01, inplace=True)
         )
 
@@ -126,7 +123,7 @@ class UpSample(nn.Module):
         self.upsample = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False), # Upsample layer
             nn.Conv2d(feature * 2, feature, kernel_size=1), # e.g., 1x1 conv
-            nn.BatchNorm2d(feature),
+            nn.InstanceNorm2d(feature),
             nn.LeakyReLU(negative_slope=0.01, inplace=True)
         )
     
@@ -145,16 +142,16 @@ class UNet(nn.Module):
     """
     def __init__(self):
         super(UNet, self).__init__()
-        self.batch_processing = True
+        self.batch_processing = False
 
         num_input_channels = 5
-        features = [16, 32, 64, 128, 256]
+        features = [8, 16, 32, 64, 128]
         kernel_sizes = [3, 3, 3, 3, 3]
         strides = [1, 1, 1, 1, 1]
         paddings = [1, 1, 1, 1, 1]
         dilations = [1, 1, 1, 1, 1]
 
-        bottleneck_in, bottleneck_out = 256, 512
+        bottleneck_in, bottleneck_out = 128, 256
         # Downsampling path (Encoder)
         self.downs = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2) # Define pooling layer
@@ -178,7 +175,11 @@ class UNet(nn.Module):
             )
 
         # Final output layer maps to desired number of channels.
-        self.final_conv = nn.Conv2d(features[0], 1, kernel_size=1)
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(features[0], features[0], kernel_size=3, padding=1),
+            nn.LeakyReLU(negative_slope=0.01, inplace=True),
+            nn.Conv2d(features[0], 1, kernel_size=1)
+        )
     
     def forward(self, x, target):
         skip_connections = []
@@ -187,7 +188,7 @@ class UNet(nn.Module):
         for down in self.downs:
             x = down(x)
             skip_connections.append(x)
-            if x.shape[-2] > 4:  # Check spatial dimension before pooling
+            if x.shape[-2] > 8:  # Check spatial dimension before pooling
                 x = self.pool(x)  # Apply max pooling after each downsampling block
         
         # Bottleneck

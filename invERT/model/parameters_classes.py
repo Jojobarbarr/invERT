@@ -14,3 +14,4 @@ class LoggingParameters:
     model_output_folder_train: Path
     model_output_folder_test: Path
     checkpoint_folder: Path
+    validation_folder: Path

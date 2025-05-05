@@ -1,7 +1,7 @@
 {
   "experiment": {
     "experiment_name": {
-      "value": "padded",
+      "value": "no_pad_no_resize_sum_weight",
       "type": "string",
     },
     "output_folder": {
@@ -11,22 +11,22 @@
   },
   "training": {
     "epochs": {
-      "value": 50,
+      "value": 30,
       "type": "int",
     },
     "learning_rate": {
-      "value": 0.0001,
+      "value": 0.001,
       "type": "float",
     },
     "optimizer": {
       "type": {
-        "value": "adam",
+        "value": "adamw",
         "type": "string",
       },
     },
     "scheduler": {
       "enabled": {
-        "value": "false",
+        "value": "true",
         "type": "bool",
       },
       "type": {
@@ -41,21 +41,22 @@
   },
   "logging": {
     "num_print_points": {
-      "value": 8,
+      "value": 1,
       "type": "int",
     },
   },
   "dataset": {
     "dataset_name": {
-      "value": "/home/labo3A/samples_normalized",
+      "value": "/home/labo3A/samples_norm/samples_norm",
+      // "value": "/mnt/ensg/tout_le_monde/Basile/dataset_sensitivity_5_5_cosine_tape/samples_norm",
       "type": "string",
     },
     "test_split": {
-      "value": 0.07,
+      "value": 0.05,
       "type": "float",
     },
     "validation_split": {
-      "value": 0.0 ,
+      "value": 0.05,
       "type": "float",
     },
     "batch_size": {

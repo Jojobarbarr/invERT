@@ -279,26 +279,5 @@ class Config:
         If the configuration is not valid, the function raises an
         AssertionError with a message indicating the issue.
         """
-        # Check if the sum of test_split and validation_split is less than 0.4
-        limit: float = 0.4
-        data_left: int = self.dataset.test_split - \
-            self.dataset.validation_split
-        assert (data_left < limit), \
-            (f"The sum of test_split and validation_split must be less than "
-             f"{limit}. You have a test_split = {self.dataset.test_split} "
-             f"and a validation_split = {self.dataset.validation_split} "
-             f"(sum is {data_left}).")
-
-        # Check if the selected optimizer is implemented
-        implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
-        assert self.training.optimizer.type in implemented_optimizers, \
-            (f"Optimizer must be one of {implemented_optimizers}. "
-             f"You have {self.training.optimizer}.")
-
-        # Check if the selected loss function is implemented
-        implemented_training_losses: list[str] = ["mse", "l1"]
-        assert self.training.loss_function in implemented_training_losses, \
-            (f"Loss must be one of {implemented_training_losses}. You have "
-             f"{self.training.loss_function}")
-
+        # TODO: Add checks for the configuration file
         return True
