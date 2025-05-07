@@ -1,148 +1,67 @@
 {
   "experiment": {
     "experiment_name": {
-      "value": "true_data_test",
+      "value": "no_pad_no_resize_sum_weight",
       "type": "string",
     },
     "output_folder": {
-      "value": "../results",
+      "value": "results",
       "type": "Path",
-    },
-    "repetitions": {
-      "value": 5,
-      "type": "int",
     },
   },
   "training": {
     "epochs": {
-      "value": 3,
+      "value": 15,
       "type": "int",
     },
-    "initial_learning_rate": {
-      "value": 0.001,
+    "learning_rate": {
+      "value": 0.0005,
       "type": "float",
     },
     "optimizer": {
       "type": {
-        "value": "adam",
+        "value": "adamw",
         "type": "string",
       },
-      "weight_decay": {
-        "value": 0.00,
-        "type": "float",
+    },
+    "scheduler": {
+      "enabled": {
+        "value": "true",
+        "type": "bool",
+      },
+      "type": {
+        "value": "cosine_warmup",
+        "type": "string",
       },
     },
     "loss_function": {
       "value": "mse",
       "type": "string",
     },
-    "lr_scheduler": {
-      "type": {
-        "value": "plateau",
-        "type": "string",
-      },
-      "enabled": {
-        "value": "true",
-        "type": "bool",
-      },
-      "factor": {
-        "value": 0.5,
-        "type": "float",
-      },
-      "patience": {
-        "value": 5,
-        "type": "int",
-      },
-    },
   },
   "logging": {
-    "print_points": {
-      "value": 32,
+    "num_print_points": {
+      "value": 1,
       "type": "int",
     },
   },
   "dataset": {
     "dataset_name": {
-      "value": "../output_lmbd_1000/data.lmdb",
+      "value": "/home/labo3A/samples_norm/samples_norm",
+      // "value": "/mnt/ensg/tout_le_monde/Basile/dataset_sensitivity_5_5_cosine_tape/samples_norm",
       "type": "string",
     },
-    // if dataset_name is "_generated", the following parameters are used to generate the dataset
-    "num_samples": {
-      "value": 16384,
-      "type": "int",
-    },
-    // num_sub_group must be a divisor of num_samples
-    "num_sub_group": {
-      "value": 4,
-      "type": "int",
-    },
-    "data_min_size": {
-      "value": 10,
-      "type": "int",
-    },
-    "data_max_size": {
-      "value": 100,
-      "type": "int",
-    },
-    "noise": {
-      "value": 0.1,
-      "type": "float",
-    },
-    // Be careful as the total sample generated or used is num_samples * (1 + test_split + validation_split)
     "test_split": {
-      "value": 0.1,
+      "value": 0.05,
       "type": "float",
     },
     "validation_split": {
-      "value": 0.1,
+      "value": 0.05,
       "type": "float",
     },
-    // Batch size must be a divisor of num_samples (if dataset_name is "_generated")
     "batch_size": {
-      "value": 64,
+      "value": 32,
       "type": "int",
-    },
-    // Batch mixture must be a divisor of batch_size
-    "batch_mixture": {
-      "value": 4,
-      "type": "int",
-    },
-  },
-  "model": {
-    "mlp": {
-      "input_metadata_dim": {
-        "value": 3,
-        "type": "int",
-      },
-      "hidden_dims": [64],
-    },
-    "cnn": {
-      "conv_layers": [
-        {
-          "in_channels": {
-            "value": 1,
-            "type": "int",
-          },
-          "kernel_shape": {
-            "value": 3,
-            "type": "int",
-          },
-        }, 
-        {
-          "in_channels": {
-            "value": 32,
-            "type": "int",
-          },
-          "kernel_shape": {
-            "value": 3,
-            "type": "int",
-          },
-        },
-      ],
-      "out_channels": {
-        "value": 1,
-        "type": "int",
-      },
     },
   },
 }

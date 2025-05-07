@@ -41,6 +41,14 @@ class Config:
                 for index, item in enumerate(value):
                     if isinstance(item, dict):
                         value[index] = Config(item)
+                    elif isinstance(item, list):
+                        for sub_index, sub_item in enumerate(item):
+                            if isinstance(sub_item, dict):
+                                item[sub_index] = Config(sub_item)
+                            else:
+                                raise ValueError(
+                                    f"Expected a dictionary, got {sub_item} "
+                                    f"of type {type(sub_item)} for key {key}.")
             else:
                 raise ValueError(
                     f"Expected a dictionary or a list, got {value} of type "
@@ -199,7 +207,6 @@ class Config:
         return save_folder
 
     def _create_save_folder(self,
-                            always_yes: bool,
                             ) -> bool:
         """
         Create the save folder for the experiment.
@@ -211,9 +218,10 @@ class Config:
         successfully created, the function returns True. Otherwise, it returns
         False.
 
-        @param always_yes: Skip the confirmation prompt if True.
-        @return: True if the save folder is successfully created, False
-        otherwise.
+        Returns
+        -------
+        bool
+            True if the folder is created successfully, False otherwise.
         """
         try:
             self.experiment.output_folder.mkdir(parents=True)
@@ -221,18 +229,16 @@ class Config:
             # There is already an experiment with the same name.
             # Warns the user, and if flag --yes is not True, asks
             # for confirmation before overwriting it.
-            if not always_yes:
-                keep_going: str = input(
-                    f"Output folder already exists here "
-                    f"{self.experiment.output_folder.resolve()}. "
-                    f"Do you want to continue and potentially overwite it? "
-                    f"(y/n) ")
-                if keep_going.lower() != 'y':
-                    return False
+            keep_going: str = input(
+                f"Output folder already exists here "
+                f"{self.experiment.output_folder.resolve()}. "
+                f"Do you want to continue and potentially overwite it? "
+                f"(y/n) ")
+            if keep_going.lower() != 'y':
+                return False
         return True
 
     def check_and_save(self,
-                       always_yes: bool,
                        ) -> bool:
         """
         Check the validity of the configuration and save it to JSON5 format.
@@ -243,11 +249,11 @@ class Config:
         configuration file. If the configuration is not valid, the function
         returns False.
 
-        @param always_yes: Skip the confirmation prompt if True.
-        @return: True if the configuration file is saved successfully, False
-        otherwise.
-
-        @raise AssertionError: If the configuration is not valid.
+        Returns
+        -------
+        bool
+            True if the configuration is valid and saved successfully, False
+            otherwise.
         """
         if not self._check():  # Check if the configuration is valid
             return False
@@ -256,7 +262,7 @@ class Config:
         self.experiment.output_folder = self._get_name()
 
         # Create the save folder
-        if not self._create_save_folder(always_yes):
+        if not self._create_save_folder():
             return False
 
         # Save the configuration file
@@ -273,77 +279,5 @@ class Config:
         If the configuration is not valid, the function raises an
         AssertionError with a message indicating the issue.
         """
-        # Check if the sum of test_split and validation_split is less than 0.4
-        limit: float = 0.4
-        data_left: int = self.dataset.test_split - \
-            self.dataset.validation_split
-        assert (data_left < limit), \
-            (f"The sum of test_split and validation_split must be less than "
-             f"{limit}. You have a test_split = {self.dataset.test_split} "
-             f"and a validation_split = {self.dataset.validation_split} "
-             f"(sum is {data_left}).")
-
-        # Check if the selected optimizer is implemented
-        implemented_optimizers: list[str] = ["adam", "sgd", "rmsprop"]
-        assert self.training.optimizer.type in implemented_optimizers, \
-            (f"Optimizer must be one of {implemented_optimizers}. "
-             f"You have {self.training.optimizer}.")
-
-        # Check if the selected loss function is implemented
-        implemented_training_losses: list[str] = ["mse", "l1"]
-        assert self.training.loss_function in implemented_training_losses, \
-            (f"Loss must be one of {implemented_training_losses}. You have "
-             f"{self.training.loss_function}")
-
-        # Check if the selected learning rate scheduler is implemented
-        implemented_lr_schedulers: list[str] = ["plateau"]
-        assert self.training.lr_scheduler.type in implemented_lr_schedulers, \
-            (f"Learning rate scheduler type must be one of "
-             f"{implemented_lr_schedulers}. You have "
-             f"{self.training.lr_scheduler.type}.")
-
-        # Check if the batch_mixture is a divisor of the batch_size
-        batch_size = self.dataset.batch_size
-        batch_mixture = self.dataset.batch_mixture
-        assert batch_size % batch_mixture == 0, \
-            (f"batch_mixture must be a divisor of batch_mixture. "
-             f"You have {batch_size} and {batch_mixture}.")
-
-        # Check if num_sub_group is a divisor of num_samples
-        num_samples = self.dataset.num_samples
-        num_sub_group = self.dataset.num_sub_group
-        assert num_samples % num_sub_group == 0, \
-            (f"num_sub_group must be a divisor of num_samples. "
-             f"You have {num_samples} and {num_sub_group}.")
-
-        # Check if the test sub-groups size are greater than 0
-        test_sub_group_size = self.dataset.test_split \
-            * (num_samples // num_sub_group)
-        assert test_sub_group_size > 0, \
-            (f"test sub_groups size must be greater than 0. "
-             f"Your test sub_groups size is {test_sub_group_size}.\n"
-             f"Increase test_split, dataset_size or decrease num_sub_group.")
-
-        # Check if the validation sub-groups size are greater than 0
-        val_sub_group_size = self.dataset.validation_split \
-            * (num_samples // num_sub_group)
-        assert val_sub_group_size > 0, \
-            (f"validation sub_groups size must be greater than 0. "
-             f"Your validation sub_groups size is {val_sub_group_size}.\n"
-             f"Increase validation_split, dataset_size or decrease "
-             f"num_sub_group.")
-
-        # Check if the batch_mixture is less than or equal to the number of
-        # sub-groups
-        assert batch_mixture <= num_sub_group, \
-            (f"batch_mixture must be less than or equal to num_sub_group. "
-             f"You have {batch_mixture} and {num_sub_group}.")
-
-        # Check if logging.print_points is a divisor of the number of batches.
-        iteration_per_epoch = num_samples // batch_size
-        assert iteration_per_epoch % self.logging.print_points == 0, \
-            (f"logging.print_points must be a divisor of the number of "
-             f"batches. You have {iteration_per_epoch} and "
-             f"{self.logging.print_points}.")
-
+        # TODO: Add checks for the configuration file
         return True

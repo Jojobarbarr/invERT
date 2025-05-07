@@ -1,315 +1,623 @@
-from tqdm import tqdm
-from torch import Tensor, float32, no_grad, tensor
+import torch
+from torch import Tensor
 from torch.utils.data import DataLoader
-# from torch.nn.utils import clip_grad_norm_
 from torch.nn import Module
 from torch.optim import Optimizer
-from model.models import DynamicModel
+from torch.amp import GradScaler, autocast
+from tqdm import tqdm
 import numpy as np
+import matplotlib
+matplotlib.use('Agg') # Set backend early, prevents GUI issues in non-GUI envs
 import matplotlib.pyplot as plt
-from data.data import denormalize
-import multiprocessing as mp
-from pathlib import Path
-from model.parameters_classes import TestingParameters
+import logging
+import torch.nn.functional as F
+from typing import Dict
+
+from collections import deque
+
+from model.parameters_classes import LoggingParameters
+from model.validation import final_validation
+
+# --- Constants ---
+NUM_PLOT_SAMPLES = 5
 
 
-def test_mini_batch(model: DynamicModel,
-                    test_dataloader: DataLoader,
-                    device: str,
-                    input_max_shape: int,
-                    criterion: Module,
-                    ) -> Tensor:
-    # Get the inputs and targets
-    test_inputs, test_targets = next(iter(test_dataloader))
+# --- Helper Functions ---
 
-    mini_batch_size: int = test_inputs.shape[0]
-    with no_grad():
-        # Send the inputs and targets to the device
-        test_inputs: Tensor = test_inputs.to(device)
-        test_targets: Tensor = test_targets.to(device)
+def tensors_to_numpy_list(tensor_list: list[Tensor]) -> list[np.ndarray]:
+    """
+    Converts a list of tensors to a list of NumPy arrays,
+    filtering out any tensors that are all zeros.
 
-        # Compute the input metadata and send it to the device
-        test_inputs_metadata: Tensor = tensor(
-            [
-                [test_inputs.shape[2] / input_max_shape,
-                 test_inputs.shape[3] / input_max_shape]
-            ]
-            * mini_batch_size
-        ).view(mini_batch_size, 2).to(device)
+    Args:
+        tensor_list: List of tensors (presumably on CPU).
 
-        # Forward pass
-        test_outputs = model(test_inputs_metadata, test_inputs)
+    Returns:
+        List of NumPy arrays.
+    """
+    result = []
+    for tensor in tensor_list:
+        result.append(tensor.cpu().numpy())
+    return result
 
-        # Compute the loss
-        return criterion(test_outputs, test_targets)
+# --- Plotting Functions ---
+
+def plot_samples(
+    psections_np: list[np.ndarray],
+    targets_np: list[np.ndarray],
+    JtJ_diag_np: list[np.ndarray],
+    preds_np: list[np.ndarray],
+    num_electrodes_list: list[np.ndarray],
+    array_type_list: list[np.ndarray],
+    prefix: str,
+    current_step: int,
+    logging_parameters: LoggingParameters,
+    sensitivity_np: list[np.ndarray] = None
+) -> None:
+    # Ensure we have masks corresponding to other data
+    num_samples_to_plot = NUM_PLOT_SAMPLES
+    if sensitivity_np is not None:
+        num_columns = 7
+    else:
+        num_columns = 6
+
+    fig, axs = plt.subplots(num_samples_to_plot, num_columns, figsize=(5 * num_columns, 4 * num_samples_to_plot), squeeze=False)
+    fig.suptitle(f"{prefix} @ Step {current_step}: Pseudosection, Output, Target, Weights, Weighted Error", fontsize=14)
+
+    for i in range(num_samples_to_plot):
+        psec_orig = psections_np[i].squeeze()[0] # Use squeeze to remove dims of size 1
+        target_orig = targets_np[i].squeeze()
+        JtJ_diag_orig = JtJ_diag_np[i].squeeze()
+        pred_orig = preds_np[i].squeeze()
+        if sensitivity_np is not None:
+            sensitivity_orig = sensitivity_np[i].squeeze()
+        num_electrodes = int(num_electrodes_list[i] * 72 + 24)
+        array_type = array_type_list[i]
+
+        # --- 1. Find Bounding Box ---
+        valid_values = np.where(JtJ_diag_orig != 0, True, False) # Mask for valid values
+        rows, cols = np.where(valid_values)
+        r_min, r_max = rows.min(), rows.max()
+        c_min, c_max = cols.min(), cols.max()
+
+        # --- 2. Crop Data to Bounding Box ---
+        psec_width = num_electrodes - 3
+        psec_height = num_electrodes // 2 - 1 if array_type else (num_electrodes - 1) // 3
+        psec_cropped = psec_orig[:psec_height, :psec_width]
+        # psec_cropped = psec_orig[:, :]
+        psec_cropped = np.where(psec_cropped == 0, np.nan, psec_cropped) # Replace zeros with NaN for visualization
+
+        target_cropped = target_orig[r_min:r_max, c_min:c_max]
+        JtJ_diag_cropped = JtJ_diag_orig[r_min:r_max, c_min:c_max]
+        pred_cropped = pred_orig[r_min:r_max, c_min:c_max]
+        if sensitivity_np is not None:
+            sensitivity_cropped = sensitivity_orig[r_min:r_max, c_min:c_max]
+        valid_values = valid_values[r_min:r_max, c_min:c_max]
+
+        # --- Calculate error ---
+        weighted_error_cropped = JtJ_diag_cropped * (target_cropped - pred_cropped) ** 2
+        if sensitivity_np is not None:
+            error_weight_cropped = (JtJ_diag_cropped - sensitivity_cropped) ** 2
+
+        # --- 4. Plotting Cropped Data ---
+        cmap_plots = 'viridis'
+        cmap_error = 'magma'
+
+        idx = 0
+
+        # Plot Pseudosection
+        im = axs[i, idx].imshow(psec_cropped, cmap=cmap_plots)
+        axs[i, idx].set_title("Pseudosection")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        # vmin = np.nanmin([np.nanmin(target_cropped), np.nanmin(pred_cropped)])
+        # vmax = np.nanmax([np.nanmax(target_cropped), np.nanmax(pred_cropped)])
+        vmin = 0
+        vmax = 1
+
+        # Plot Prediction
+        im = axs[i, idx].imshow(pred_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
+        axs[i, idx].set_title("Output")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        # Plot Target
+        im = axs[i, idx].imshow(target_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
+        axs[i, idx].set_title("Target")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        if sensitivity_np is not None:
+            JtJ_diag_vmin = min(np.nanmin(JtJ_diag_cropped), np.nanmin(sensitivity_cropped))
+            JtJ_diag_vmax = max(np.nanmax(JtJ_diag_cropped), np.nanmax(sensitivity_cropped))
+        else:
+            JtJ_diag_vmin = np.nanmin(JtJ_diag_cropped)
+            JtJ_diag_vmax = np.nanmax(JtJ_diag_cropped)
+
+        # Plot JtJ_diag
+        im = axs[i, idx].imshow(JtJ_diag_cropped, cmap=cmap_plots, vmin=JtJ_diag_vmin, vmax=JtJ_diag_vmax)
+        axs[i, idx].set_title("Loss Weights")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        # Plot Sensitivity
+        if sensitivity_np is not None:
+            im = axs[i, idx].imshow(sensitivity_cropped, cmap=cmap_plots, vmin=JtJ_diag_vmin, vmax=JtJ_diag_vmax)
+            axs[i, idx].set_title("Sensitivity")
+            fig.colorbar(im, ax=axs[i, idx])
+            idx += 1
+
+        # Plot Error
+        error_vmin = np.nanmin(weighted_error_cropped)
+        error_vmax = np.nanmax(weighted_error_cropped)
+        im = axs[i, idx].imshow(weighted_error_cropped, cmap=cmap_error, vmin=error_vmin, vmax=error_vmax)
+        axs[i, idx].set_title("Weighted Error")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        # Plot Error Weight
+        if sensitivity_np is not None:
+            error_weight_vmin = np.nanmin(error_weight_cropped)
+            error_weight_vmax = np.nanmax(error_weight_cropped)
+            im = axs[i, idx].imshow(error_weight_cropped, cmap=cmap_error, vmin=error_weight_vmin, vmax=error_weight_vmax)
+            axs[i, idx].set_title("Error Weight")
+            fig.colorbar(im, ax=axs[i, idx])
+            idx += 1
 
 
-def test(model: DynamicModel,
-         print_point: int,
-         test_dataloaders: list[DataLoader],
-         criterion: Module,
-         input_max_shape: int,
-         device: str,
-         testing_params: TestingParameters,
-         ):
-    batch_loss_value: Tensor = testing_params.batch_loss_value
-    model.eval()
-    test_batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
-    for test_dataloader in test_dataloaders:
-        test_batch_loss_value += test_mini_batch(model,
-                                                 test_dataloader,
-                                                 device,
-                                                 input_max_shape,
-                                                 criterion)
-    repetition: int = testing_params.repetition
-    queue: mp.Queue = testing_params.queue
-    # Log the losses values
-    testing_params.loss_arrays[repetition, print_point] = \
-        batch_loss_value.item()
-    testing_params.test_loss_arrays[repetition, print_point] = \
-        test_batch_loss_value.item()
+    fig.tight_layout()
+    if prefix == "Train":
+        plot_filename = logging_parameters.model_output_folder_train / f"output_step_{current_step}_{prefix.lower()}.png"
+    else:
+        plot_filename = logging_parameters.model_output_folder_test / f"output_step_{current_step}_{prefix.lower()}.png"
 
-    # Send the losses to the queue
-    if queue is not None:
-        queue.put((batch_loss_value.item(),
-                   test_batch_loss_value.item(),
-                   repetition,
-                   print_point))
-    return test_batch_loss_value
+    fig.savefig(plot_filename)
+    plt.close(fig)
 
 
-def process_mini_batch(model: DynamicModel,
-                       train_dataloader: list[DataLoader],
-                       device: str,
-                       input_max_shape: int,
-                       criterion: Module,
-                       ) -> Tensor:
-    inputs, targets = next(iter(train_dataloader))
+def plot_loss_curve(logging_parameters: LoggingParameters) -> None:
+    """
+    Plots the training and testing loss curves.
 
-    mini_batch_size: int = inputs.shape[0]
+    Args:
+        logging_parameters: Object containing loss history and paths.
+    """
+    if not logging_parameters.loss_value or not logging_parameters.test_loss_value:
+        logging.warning("No loss values recorded. Skipping loss curve plot.")
+        return
 
-    # Send the inputs and targets to the device
-    inputs: Tensor = inputs.to(device)
-    targets: Tensor = targets.to(device)
+    # Use the recorded batch indices for the x-axis
+    steps = logging_parameters.print_points_list[:len(logging_parameters.loss_value)]
 
-    # Compute the input metadata and send it to the device
-    # TODO: Check if this is correct
-    inputs_metadata: Tensor = tensor(
-        [
-            [inputs.shape[2] / input_max_shape,
-                inputs.shape[3] / input_max_shape]
-        ]
-        * mini_batch_size
-    ).view(mini_batch_size, 2).to(device)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(steps, logging_parameters.loss_value, label="Train Loss", marker='o', color='b')
+    ax.plot(steps, logging_parameters.running_loss_value[:len(steps)], label="Running Loss", marker='s', color='g')
+    ax.plot(steps, logging_parameters.test_loss_value[:len(steps)], label="Test Loss", marker='x', color='r')
+    ax.set_xlabel("Training Step (Batch Index)")
+    ax.set_ylabel("Loss")
+    ax.set_title("Loss vs Training Step")
+    ax.legend()
+    ax.grid(True)
 
-    # Forward pass
-    outputs: Tensor = model(inputs_metadata, inputs)
-
-    # Compute the mini_batch loss
-    return criterion(outputs, targets)
+    loss_filename = logging_parameters.figure_folder / "loss_curve.png"
+    fig.savefig(loss_filename)
+    plt.close(fig)
 
 
-def process_batch(model: DynamicModel,
-                  batch: int,
-                  train_dataloaders: list[DataLoader] | DataLoader,
-                  test_dataloaders: list[DataLoader] | DataLoader,
-                  optimizer: Optimizer,
-                  criterion: Module,
-                  input_max_shape: int,
-                  device: str,
-                  testing_params: TestingParameters,
-                  ) -> None:
-    # Clear previous gradients
+# --- Evaluation Function ---
+
+def evaluate(
+    model,
+    dataloader: DataLoader,
+    criterion: Module,
+    device: torch.device,
+    use_amp: bool
+) -> float:
+    """
+    Evaluates the model on the provided dataloader.
+
+    Args:
+        model: The model to evaluate.
+        dataloader: DataLoader for the evaluation dataset.
+        criterion: The loss function (expecting reduction='none').
+        device: The device to run evaluation on.
+        use_amp: Whether to use automatic mixed precision.
+
+    Returns:
+        Average loss over the entire dataset.
+    """
+    model.eval()  # Set model to evaluation mode
+    total_loss = 0.0
+    total_elements = 0
+
+    with torch.no_grad(): # Disable gradient calculations
+        for batch in tqdm(dataloader, desc="Evaluating", leave=False, unit="batch"):
+            batch = {k: v.to(device) for k, v in batch.items()} # Move batch data to device
+            
+            if model.batch_processing:
+                pseudosection_batch = batch['pseudosection']
+                target_batch = batch['norm_log_resistivity_model']
+                weights_matrix = batch['JtJ_diag']
+
+                with autocast(device.type, enabled=use_amp):
+                    output_batch = model(pseudosection_batch, target_batch)
+                    weighted_loss = weights_matrix * criterion(output_batch, target_batch)
+                # batch loss is sum of all loss per pixel divided by the weights on those pixels.
+                batch_loss_sum = weighted_loss.sum().item()
+                current_batch_weights_count = weights_matrix.sum().item()
+                # current_batch_weights_count = torch.sum(weights_matrix != 0) # Count non-zero weights
+            else:
+                pseudosection_batch = batch['pseudosection']
+                target_batch = batch['norm_log_resistivity_model']
+                weights_matrix = batch['JtJ_diag']
+                pseudo_masks = batch['pseudo_masks']
+                target_masks = batch['target_masks']
+                batch_loss_sum = 0.0
+                current_batch_weights_count = 0
+                for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection_batch, target_batch, weights_matrix, pseudo_masks, target_masks):
+                    pseudo_h, pseudo_w = pseudo_mask.tolist()
+                    target_h, target_w = target_mask.tolist()
+
+                    pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)
+                    target = target[..., :target_h, :target_w].unsqueeze(0)
+                    weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)
+                    with autocast(device.type, enabled=use_amp):
+                        output = model(pseudosection, target)
+                        output, sensitivity = output[:, 0:-1], output[:, 1:] 
+                        # weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+                        weighted_loss = weight_matrix * criterion(output, target) + criterion(sensitivity, weight_matrix) # reduction='none'
+                    batch_loss_sum += weighted_loss.sum().item()
+                    current_batch_weights_count += weight_matrix.sum().item()
+
+            total_loss += batch_loss_sum
+            total_elements += current_batch_weights_count
+
+    model.train()
+    return total_loss / total_elements
+
+
+
+# --- Training Step Functions ---
+def process_batch(
+    batch: dict[str, Tensor], # Assuming InvERTSample is dict-like
+    model,
+    criterion: Module,
+    optimizer: Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scaler: GradScaler,
+    device: torch.device,
+    use_amp: bool
+) -> float:
+    """
+    Processes a single batch for training (forward, backward, optimization).
+
+    Args:
+        batch: A dictionary containing the batch data.
+        model: The model to train.
+        criterion: The loss function (expecting reduction='none').
+        optimizer: The optimizer.
+        scaler: GradScaler for mixed precision.
+        device: The device being used.
+        use_amp: Whether to use automatic mixed precision.
+
+    Returns:
+        The calculated loss for this batch.
+    """
     optimizer.zero_grad()
-    # Initialize the batch loss value
-    batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
 
-    if isinstance(train_dataloaders, DataLoader):
-        train_dataloaders = [train_dataloaders]
-    for train_dataloader in train_dataloaders:
-        # Accumulate the loss value for the mini-batch
-        batch_loss_value += process_mini_batch(model,
-                                               train_dataloader,
-                                               device,
-                                               input_max_shape,
-                                               criterion)
+    with autocast(device.type, enabled=use_amp):
+        
+        pseudosection_batch = batch['pseudosection']
+        target_batch = batch['norm_log_resistivity_model']
+        weights_matrix = batch['JtJ_diag']
+        if model.batch_processing:
+            output_batch = model(pseudosection_batch, target_batch)
+            weighted_loss = weights_matrix * criterion(output_batch, target_batch) # reduction='none'
+            # Apply mask and calculate effective batch loss
+            # weights_sum = weights_matrix.sum()
+            weights_sum = torch.sum(weights_matrix != 0).item() # Count non-zero weights
+            batch_loss = weighted_loss.sum() / weights_sum
+        else:
+            total_weighted_loss_sum = 0.0
+            total_weights_count = 0.0
+            pseudo_masks = batch['pseudo_masks']
+            target_masks = batch['target_masks']
+            for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection_batch, target_batch, weights_matrix, pseudo_masks, target_masks):
+                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                target_h, target_w = target_mask.tolist()
 
-    # Backward pass
-    batch_loss_value.backward()
+                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)  # Crop to the target size
+                target = target[..., :target_h, :target_w].unsqueeze(0)  # Crop to the target size
+                weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)  # Crop to the target size
 
-    # Gradient clipping
-    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                output = model(pseudosection, target)
+                # weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+                output, sensitivity = output[:, 0:-1], output[:, 1:]
+                weighted_loss = weight_matrix * criterion(output, target) + criterion(sensitivity, weight_matrix) # reduction='none'
 
-    # Check if there are any None gradients
-    for name, param in model.named_parameters():
-        if param.grad is None:
-            print(f"Grad for {name}: None")
+                current_sample_loss_sum = weighted_loss.sum()
+                # current_sample_weights_count = torch.numel(weight_matrix)
+                current_sample_weights_sum = weight_matrix.sum().item()
 
-    # Update the weights
-    optimizer.step()
-    print_points: int = testing_params.print_points
-    nb_print_points: int = testing_params.nb_print_points
-    epoch: int = testing_params.epoch
-    test_batch_loss_value: Tensor = tensor(0, dtype=float32).to(device)
-    if (batch + 1) % print_points == 0:  # Test loss evaluation
-        print_point: int = (batch // print_points) \
-            + nb_print_points * epoch
-        testing_params.batch_loss_value = batch_loss_value
-        test_batch_loss_value = test(model,
-                                     print_point,
-                                     test_dataloaders,
-                                     criterion,
-                                     input_max_shape,
-                                     device,
-                                     testing_params,
-                                     )
-    return batch_loss_value, test_batch_loss_value
+                total_weighted_loss_sum += current_sample_loss_sum
+                total_weights_count += current_sample_weights_sum
+            batch_loss = total_weighted_loss_sum / total_weights_count
+            
 
+    # Scale the loss, perform backward pass, and update optimizer
+    if use_amp:
+        scaler.scale(batch_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        batch_loss.backward()
+        optimizer.step()
+    
+    if scheduler is not None:
+        scheduler.step()
 
-def process_epoch(model: DynamicModel,
-                  nb_batches: int,
-                  train_dataloaders: list[DataLoader] | DataLoader,
-                  test_dataloaders: list[DataLoader] | DataLoader,
-                  optimizer: Optimizer,
-                  criterion: Module,
-                  input_max_shape: int,
-                  scheduler: Module,
-                  device: str,
-                  testing_params: TestingParameters,
-                  ) -> tuple[Tensor, Tensor]:
-    for batch in tqdm(range(nb_batches)):
-        batch_loss_value, test_batch_loss_value = \
-            process_batch(model,
-                          batch,
-                          train_dataloaders,
-                          test_dataloaders,
-                          optimizer,
-                          criterion,
-                          input_max_shape,
-                          device,
-                          testing_params,
-                          )
-
-    # Update the learning rate if needed
-    scheduler.step(test_batch_loss_value)
-
-    return batch_loss_value, test_batch_loss_value
+    return batch_loss.item()
 
 
-def train(model: DynamicModel,
-          epochs: int,
-          nb_batches: int,
-          train_dataloaders: list[DataLoader] | DataLoader,
-          test_dataloaders: list[DataLoader] | DataLoader,
-          optimizer: Optimizer,
-          criterion: Module,  # Loss function
-          input_max_shape: int,
-          device: str,
-          scheduler: Module,  # Learning rate scheduler
-          testing_params: TestingParameters,
-          ) -> tuple[list[float], list[float], DynamicModel]:
-    for epoch in range(epochs):
-        testing_params.epoch = epoch
-        batch_loss_value, test_batch_loss_value = \
-            process_epoch(model,
-                          nb_batches,
-                          train_dataloaders,
-                          test_dataloaders,
-                          optimizer,
-                          criterion,
-                          input_max_shape,
-                          scheduler,
-                          device,
-                          testing_params,
-                          )
+def process_epoch(
+    model,
+    running_loss: float,
+    train_dataloader: DataLoader,
+    test_dataloader: DataLoader,
+    optimizer: Optimizer,
+    scheduler: torch.optim.lr_scheduler,
+    criterion: Module,
+    scaler: GradScaler,
+    device: torch.device,
+    use_amp: bool,
+    epoch: int,
+    logging_parameters: LoggingParameters
+) -> None:
+    model.train() # Ensure model is in training mode
 
-        # Print the loss values
-        print(
-            f"Epoch [{epoch + 1}/{epochs}], ",
-            f"train loss: {batch_loss_value.item():.5f}, "
-            f"test loss: {test_batch_loss_value.item():.5f}, "
-            f"lr: {optimizer.param_groups[0]['lr']}")
+    try:
+        persistent_test_batch = next(iter(test_dataloader))
+        persistent_test_batch = {k: v.to(device) for k, v in persistent_test_batch.items()}
+    except StopIteration:
+        logging.warning("Test dataloader is empty. Cannot visualize test samples.")
+        persistent_test_batch = None
 
-    return model
+    for batch_idx, batch in tqdm(
+        enumerate(train_dataloader),
+        desc=f"Epoch {epoch} Training",
+        total=len(train_dataloader),
+        unit="batch"
+    ):
+        # Move training batch data to the target device
+        batch = {k: v.to(device) for k, v in batch.items()}
+        # Process the batch
+        batch_loss = process_batch(
+            batch, model, criterion, optimizer, scheduler, scaler, device, use_amp
+        )
+
+        # Update running loss
+        running_loss.append(batch_loss)
+
+        # --- Logging and Evaluation ---
+        if batch_idx in logging_parameters.print_points or batch_idx == len(train_dataloader) - 1:
+            if batch_idx == 0:
+                continue # Skip first step
+            current_step = (epoch - 1) * len(train_dataloader) + batch_idx # Global step
+
+            # 1. Calculate Average Test Loss over the entire test set
+            avg_test_loss = evaluate(model, test_dataloader, criterion, device, use_amp)
+
+            running_loss_average = sum(running_loss) / len(running_loss)
+
+            # 2. Log losses
+            logging_parameters.loss_value.append(batch_loss) # Log instantaneous train loss
+            logging_parameters.running_loss_value.append(running_loss_average) # Log running average train loss
+            logging_parameters.test_loss_value.append(avg_test_loss)
+
+            # Keep track of which batch index this corresponds to
+            logging_parameters.print_points_list.append(current_step) # Log global step
+
+            print(
+                f"\nEpoch {epoch} | Batch {batch_idx}/{len(train_dataloader)} | Step {current_step} | "
+                f"Train Loss (batch): {batch_loss:.5f} | "
+                f"Running Loss (avg): {running_loss_average:.5f} | "
+                f"Test Loss (avg): {avg_test_loss:.5f} | "
+                f"LR: {optimizer.param_groups[0]['lr']:.6f}"
+            )
+
+            # 3. Plot sample predictions (using the persistent test batch)
+            if persistent_test_batch:
+                model.eval() # Switch to eval mode for prediction
+                with torch.no_grad():
+                    with autocast(device.type, enabled=use_amp):
+                        if model.batch_processing:
+                            test_outputs = model(persistent_test_batch['pseudosection'], persistent_test_batch['norm_log_resistivity_model'])
+                        else:
+                            pseudosection = persistent_test_batch['pseudosection']
+                            target = persistent_test_batch['norm_log_resistivity_model']
+                            weights_matrix = persistent_test_batch['JtJ_diag']
+                            pseudo_masks = persistent_test_batch['pseudo_masks']
+                            target_masks = persistent_test_batch['target_masks']
+                            test_outputs = []
+                            test_sensitivities = []
+
+                            for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection, target, weights_matrix, pseudo_masks, target_masks):
+                                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                                target_h, target_w = target_mask.tolist()
+
+                                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)  # Add batch dimension
+                                target = target[..., :target_h, :target_w].unsqueeze(0)  # Add batch dimension
+                                output = model(pseudosection, target)
+                                output, sensitivity = output[:, 0:-1], output[:, 1:] 
 
 
-def print_model_results(model_list: list[DynamicModel],
-                        val_dataloaders: DataLoader,
-                        input_max_shape: int,
-                        device: str,
-                        min_target: float,
-                        max_target: float,
-                        output_folder: Path,
-                        ) -> None:
-    model = model_list[0]
-    with no_grad():
-        model.eval()
-        for val_dataloader_idx, val_dataloader in enumerate(val_dataloaders):
-            val_inputs, val_targets = next(iter(val_dataloader))
+                                test_outputs.append(output.cpu().numpy())
+                                test_sensitivities.append(sensitivity.cpu().numpy())
 
-            mini_batch_size: int = val_inputs.shape[0]
+                                
+                model.train() # Switch back
 
-            val_inputs: Tensor = val_inputs.to(device)
-            val_targets: Tensor = val_targets.to(device)
-            val_input_metadata: Tensor = tensor(
-                [
-                    val_inputs.shape[2] / input_max_shape,
-                    val_inputs.shape[3] / input_max_shape
-                ]
-                * mini_batch_size,
-            ).view(mini_batch_size, 2).to(device)
+                # Prepare data for plotting (move needed tensors to CPU)
+                psec_test_np = tensors_to_numpy_list(persistent_test_batch['pseudosection'].cpu())
+                target_test_np = tensors_to_numpy_list(persistent_test_batch['norm_log_resistivity_model'].cpu())
+                JtJ_diag_test_np = tensors_to_numpy_list(persistent_test_batch['JtJ_diag'].cpu())
+                if isinstance(test_outputs, Tensor):
+                    output_test_np = tensors_to_numpy_list(test_outputs.cpu())
+                else:
+                    output_test_np = test_outputs
+                    sensitivity_test_np = test_sensitivities
+                test_num_electrodes_list = persistent_test_batch['num_electrode'].cpu().numpy()
+                test_array_type_list = [torch.argmax(array_type).cpu().numpy() for array_type in persistent_test_batch['array_type']]
 
-            val_outputs: Tensor = model(
-                val_input_metadata,
-                val_inputs)
+                # Also plot the current training batch examples
+                psec_train_np = tensors_to_numpy_list(batch['pseudosection'].cpu())
+                target_train_np = tensors_to_numpy_list(batch['norm_log_resistivity_model'].cpu())
+                JtJ_diag_train_np = tensors_to_numpy_list(batch['JtJ_diag'].cpu())
+                train_num_electrodes_list = batch['num_electrode'].cpu().numpy()
+                train_array_type_list = [torch.argmax(array_type).cpu().numpy() for array_type in batch['array_type']]
 
-            # Denormalize the data
-            val_targets: np.ndarray[float, float] = denormalize(
-                val_targets,
-                min_target, max_target)[0, 0].detach().cpu().numpy()
-            val_outputs: np.ndarray[float, float] = denormalize(
-                val_outputs,
-                min_target, max_target)[0, 0].detach().cpu().numpy()
+                # Need to recompute output for the training batch
+                model.eval()
+                with torch.no_grad():
+                    with autocast(device.type, enabled=use_amp):
+                        if model.batch_processing:
+                            train_outputs_plot = model(batch['pseudosection'], batch['norm_log_resistivity_model'])
+                        else:
+                            pseudosection = batch['pseudosection']
+                            target = batch['norm_log_resistivity_model']
+                            pseudo_masks = batch['pseudo_masks']
+                            target_masks = batch['target_masks']
 
-            error_map = np.abs(val_targets - val_outputs) / val_targets
+                            train_outputs_plot = []
+                            train_sensitivities_plot = []
 
-            # Create subplots: 1 row, 3 columns
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
 
-            # Normalize target and output for consistent scaling
-            vmin, vmax = min(
-                val_targets.min(), val_outputs.min()), max(
-                val_targets.max(), val_outputs.max())
+                            for pseudosection, target, pseudo_mask, target_mask in zip(pseudosection, target, pseudo_masks, target_masks):
+                                pseudo_h, pseudo_w = pseudo_mask.tolist()
+                                target_h, target_w = target_mask.tolist()
 
-            # Plot the target image
-            im0 = axes[0].imshow(val_targets,
-                                 cmap='gray',
-                                 vmin=vmin,
-                                 vmax=vmax)
-            axes[0].set_title("Target")
-            axes[0].axis('on')
-            cbar0 = fig.colorbar(im0, ax=axes[0], orientation='vertical')
-            cbar0.set_label('Value')
+                                pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)
+                                target = target[..., :target_h, :target_w].unsqueeze(0)
+                                output = model(pseudosection, target)
+                                output, sensitivity = output[:, 0:-1], output[:, 1:] 
+                                train_outputs_plot.append(output.cpu().numpy())
+                                train_sensitivities_plot.append(sensitivity.cpu().numpy())
+                model.train()
+                if isinstance(train_outputs_plot, Tensor):
+                    output_train_np = tensors_to_numpy_list(train_outputs_plot.cpu())
+                else:
+                    output_train_np = train_outputs_plot
+                    sensitivity_train_np = train_sensitivities_plot
 
-            # Plot the output image
-            im1 = axes[1].imshow(val_outputs,
-                                 cmap='gray',
-                                 vmin=vmin,
-                                 vmax=vmax)
-            axes[1].set_title("Output")
-            axes[1].axis('on')
-            cbar1 = fig.colorbar(im1, ax=axes[1], orientation='vertical')
-            cbar1.set_label('Value')
 
-            # Plot the error map
-            im2 = axes[2].imshow(error_map, cmap='hot')
-            axes[2].set_title("Error Map")
-            axes[2].axis('on')
-            cbar2 = fig.colorbar(im2, ax=axes[2], orientation='vertical')
-            cbar2.set_label('Relative Error')
+                plot_samples(
+                    psec_test_np, target_test_np, JtJ_diag_test_np, output_test_np, test_num_electrodes_list, test_array_type_list,
+                    "Test", current_step, logging_parameters, sensitivity_test_np
+                )
+                plot_samples(
+                    psec_train_np, target_train_np, JtJ_diag_train_np, output_train_np, train_num_electrodes_list, train_array_type_list,
+                    "Train", current_step, logging_parameters, sensitivity_train_np
+                )
 
-            # Adjust layout to fit everything neatly
-            plt.tight_layout()
+            # 4. Plot overall loss curve
+            plot_loss_curve(logging_parameters)
 
-            plt.savefig(output_folder / f"results_{val_dataloader_idx}.png")
-            # plt.show()
+
+
+# --- Main Training Function ---
+
+def train(
+    num_epochs: int,
+    model,
+    train_dataloader: DataLoader,
+    test_dataloader: DataLoader,
+    validation_dataloader: DataLoader,
+    optimizer: Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    criterion: Module,
+    device: torch.device,
+    use_amp: bool,
+    logging_parameters: LoggingParameters
+):
+    """
+    Main training loop for the model.
+
+    Args:
+        num_epochs: Number of epochs to train for.
+        model: The PyTorch model to train.
+        train_dataloader: DataLoader for the training data.
+        test_dataloader: DataLoader for the test data.
+        optimizer: The optimizer for updating model weights.
+        criterion: The loss function. MUST have reduction='none' for masking.
+        device_name: Name of the device to use ('cuda', 'cpu', etc.).
+        use_amp: Whether to use Automatic Mixed Precision (requires CUDA).
+        logging_parameters: Configuration object for logging results.
+    """
+    assert criterion.reduction == 'none', "Criterion must have reduction='none' for masking."
+
+    model.to(device)
+    print(f"\nUsing device: {device}")
+
+    # AMP setup
+    amp_enabled = use_amp and (device.type == 'cuda')
+    scaler = GradScaler(enabled=amp_enabled)
+    print(f"Automatic Mixed Precision (AMP): {'Enabled' if amp_enabled else 'Disabled'}")
+
+    # --- Training Loop ---
+    print(f"Starting training for {num_epochs} epochs...")
+    running_loss = deque(maxlen=100)
+    
+    for epoch in range(1, num_epochs + 1): # Start epochs from 1
+        print(f"\n--- Epoch {epoch}/{num_epochs} ---")
+
+        process_epoch(
+            model,
+            running_loss,
+            train_dataloader,
+            test_dataloader,
+            optimizer,
+            scheduler,
+            criterion,
+            scaler,
+            device,
+            amp_enabled,
+            epoch,
+            logging_parameters
+        )
+
+        checkpoint_path = logging_parameters.checkpoint_folder / f"model_epoch_{epoch}.pth"
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': logging_parameters.test_loss_value[-1] if logging_parameters.test_loss_value else None,
+        }, checkpoint_path)
+        print(f"Saved checkpoint: {checkpoint_path}")
+
+    # Saving the logging parameters
+    logging_parameters_path = logging_parameters.checkpoint_folder / "logging_parameters.pth"
+    torch.save(logging_parameters, logging_parameters_path)
+    print(f"Saved logging parameters: {logging_parameters_path}")
+
+    print("\n--- Training Finished ---")
+    if logging_parameters.loss_value and logging_parameters.test_loss_value:
+        # current_step = epoch * len(train_dataloader)
+        print(f"Final Train Loss (last logged): {logging_parameters.loss_value[-1]:.5f}")
+        print(f"Final Running Loss (last avg): {logging_parameters.running_loss_value[-1]:.5f}")
+        print(f"Final Test Loss (last avg): {logging_parameters.test_loss_value[-1]:.5f}")
+    else:
+        print("No loss values were logged during training.")
+    
+    final_metrics = final_validation(
+        model,
+        validation_dataloader, # Use the same dataloader used for testing during training
+        criterion,
+        device,
+        amp_enabled,
+        logging_parameters
+    )
+
+
+    # You can save final_metrics to a file or log them further
+    print(f"Final validation complete. Metrics: {final_metrics}")

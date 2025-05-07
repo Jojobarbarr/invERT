@@ -3,11 +3,7 @@ from config.configuration import Config
 from pathlib import Path
 from json5 import load as json_load
 from argparse import ArgumentParser
-import logging
-import time
-print("Importing...")
-start_time = time.perf_counter()
-print(f"Importation done in {time.perf_counter() - start_time:.2f} seconds")
+from typing import Any
 
 
 def parse_arguments() -> ArgumentParser:
@@ -22,64 +18,30 @@ def parse_arguments() -> ArgumentParser:
     (e.g., training.epochs=100). TODO: May need some verification about some
     data types (lists, layer?). OPTIONAL.
 
-    @return: The ArgumentParser instance.
+    Returns:
+    --------
+    ArgumentParser
+        The parsed command line arguments.
     """
     parser = ArgumentParser(
-        description=("Launch an experiment with a specified configuration "
-                     "file."))
+        description=(
+            "Launch an experiment with a specified configuration file."
+        )
+    )
     parser.add_argument(
         'config_file',
         type=Path,
         help="Path to the configuration file (JSON format).")
     parser.add_argument(
-        '-d',
-        '--debug',
-        action='store_true',
-        help="Enable debug mode.")
-    parser.add_argument(
-        '-y',
-        '--yes',
-        action='store_true',
-        help="Skip confirmation prompt.")
-    parser.add_argument(
         '-o',
         '--override',
         nargs='+',
-        help=("Override specific config parameters "
-              "(e.g., training.epochs=100)."),
+        help=(
+            "Override specific config parameters "
+            "(e.g., training.epochs=100)."
+        ),
         default=[])
     return parser.parse_args()
-
-
-def init_logging(debug: bool
-                 ) -> None:
-    """
-    Initialize the logging configuration.
-
-    Makes sure that the logging configuration is reset before setting it up if
-    debug mode is enabled. Otherwise, the INFO level is set.
-
-    @param debug: Enable debug mode if True.
-    """
-    # Reset logging configuration
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-
-    if debug:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="\n%(asctime)s - %(levelname)s -\n%(message)s\n"
-        )
-    else:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(message)s"
-        )
-
-    logging.debug("Debug messages are printed.")
-    logging.info("Info messages are printed.")
-
-    return
 
 
 def load_config(config_file: Path
@@ -90,14 +52,24 @@ def load_config(config_file: Path
     The configuration file should be a JSON5 file. If the file is not found,
     the function will print an error message and return None.
 
-    @raise FileNotFoundError: If the configuration file is not found.
+    Parameters
+    ----------
+    config_file : Path
+        The path to the configuration file.
+    
+    Returns
+    -------
+    Config | None
+        The Config instance if the file is loaded successfully, None otherwise.
 
-    @param config_file: Path to the configuration file.
-    @return: The Config instance.
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file is not found.
     """
     try:
         with open(config_file, mode='r', encoding="utf8") as config_file:
-            config_dict: dict = json_load(config_file)
+            config_dict: dict[str, Any] = json_load(config_file)
             config: Config = Config(config_dict)
     except FileNotFoundError:
         print(f"Configuration file not found: {config_file}, exiting.")
@@ -123,7 +95,6 @@ def override_config(overriden_arguments: list[str],
 
 
 def save_config(config: Config,
-                always_yes: bool,
                 ) -> bool:
     """
     Call the save method of the Config instance to save the configuration
@@ -133,12 +104,17 @@ def save_config(config: Config,
     specified in the configuration file. Refer to the Config class for more
     information.
 
-    @param config: The Config instance.
-    @param always_yes: Skip the confirmation prompt if True.
-    @return: True if the configuration file is saved successfully, False
-    otherwise.
+    Parameters
+    ----------
+    config : Config
+        The Config instance containing the configuration to be saved.
+    
+    Returns
+    -------
+    bool
+        True if the configuration file is saved successfully, False otherwise.
     """
-    if not config.check_and_save(always_yes):
+    if not config.check_and_save():
         print(
             f"\nFailed to save configuration file to "
             f"{config.experiment.output_folder.resolve()}, exiting.")
@@ -152,9 +128,6 @@ def save_config(config: Config,
 def main():
     args: ArgumentParser = parse_arguments()
 
-    # Initialize logging
-    init_logging(args.debug)
-
     # Load the configuration file
     config: Config | None = load_config(args.config_file)
     if config is None:
@@ -166,7 +139,7 @@ def main():
         config.update(overrides)
 
     # Save the updated config to the experiment result folder
-    save_config(config, args.yes)
+    save_config(config)
 
     # Run the experiment
     run_experiment(config)
