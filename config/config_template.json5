@@ -11,11 +11,11 @@
   },
   "training": {
     "epochs": {
-      "value": 30,
+      "value": 15,
       "type": "int",
     },
     "learning_rate": {
-      "value": 0.001,
+      "value": 0.0005,
       "type": "float",
     },
     "optimizer": {

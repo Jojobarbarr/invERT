@@ -51,11 +51,15 @@ def plot_samples(
     array_type_list: list[np.ndarray],
     prefix: str,
     current_step: int,
-    logging_parameters: LoggingParameters
+    logging_parameters: LoggingParameters,
+    sensitivity_np: list[np.ndarray] = None
 ) -> None:
     # Ensure we have masks corresponding to other data
     num_samples_to_plot = NUM_PLOT_SAMPLES
-    num_columns = 6
+    if sensitivity_np is not None:
+        num_columns = 7
+    else:
+        num_columns = 6
 
     fig, axs = plt.subplots(num_samples_to_plot, num_columns, figsize=(5 * num_columns, 4 * num_samples_to_plot), squeeze=False)
     fig.suptitle(f"{prefix} @ Step {current_step}: Pseudosection, Output, Target, Weights, Weighted Error", fontsize=14)
@@ -65,6 +69,8 @@ def plot_samples(
         target_orig = targets_np[i].squeeze()
         JtJ_diag_orig = JtJ_diag_np[i].squeeze()
         pred_orig = preds_np[i].squeeze()
+        if sensitivity_np is not None:
+            sensitivity_orig = sensitivity_np[i].squeeze()
         num_electrodes = int(num_electrodes_list[i] * 72 + 24)
         array_type = array_type_list[i]
 
@@ -84,19 +90,26 @@ def plot_samples(
         target_cropped = target_orig[r_min:r_max, c_min:c_max]
         JtJ_diag_cropped = JtJ_diag_orig[r_min:r_max, c_min:c_max]
         pred_cropped = pred_orig[r_min:r_max, c_min:c_max]
+        if sensitivity_np is not None:
+            sensitivity_cropped = sensitivity_orig[r_min:r_max, c_min:c_max]
         valid_values = valid_values[r_min:r_max, c_min:c_max]
 
         # --- Calculate error ---
         weighted_error_cropped = JtJ_diag_cropped * (target_cropped - pred_cropped) ** 2
+        if sensitivity_np is not None:
+            error_weight_cropped = (JtJ_diag_cropped - sensitivity_cropped) ** 2
 
         # --- 4. Plotting Cropped Data ---
         cmap_plots = 'viridis'
         cmap_error = 'magma'
 
+        idx = 0
+
         # Plot Pseudosection
-        im0 = axs[i, 0].imshow(psec_cropped, cmap=cmap_plots)
-        axs[i, 0].set_title("Pseudosection")
-        fig.colorbar(im0, ax=axs[i, 0])
+        im = axs[i, idx].imshow(psec_cropped, cmap=cmap_plots)
+        axs[i, idx].set_title("Pseudosection")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
 
         # vmin = np.nanmin([np.nanmin(target_cropped), np.nanmin(pred_cropped)])
         # vmax = np.nanmax([np.nanmax(target_cropped), np.nanmax(pred_cropped)])
@@ -104,36 +117,54 @@ def plot_samples(
         vmax = 1
 
         # Plot Prediction
-        im1 = axs[i, 1].imshow(pred_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
-        axs[i, 1].set_title("Output")
-        fig.colorbar(im1, ax=axs[i, 1])
+        im = axs[i, idx].imshow(pred_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
+        axs[i, idx].set_title("Output")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
 
         # Plot Target
-        im2 = axs[i, 2].imshow(target_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
-        axs[i, 2].set_title("Target")
-        fig.colorbar(im2, ax=axs[i, 2])
+        im = axs[i, idx].imshow(target_cropped, cmap=cmap_plots, vmin=vmin, vmax=vmax)
+        axs[i, idx].set_title("Target")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        if sensitivity_np is not None:
+            JtJ_diag_vmin = min(np.nanmin(JtJ_diag_cropped), np.nanmin(sensitivity_cropped))
+            JtJ_diag_vmax = max(np.nanmax(JtJ_diag_cropped), np.nanmax(sensitivity_cropped))
+        else:
+            JtJ_diag_vmin = np.nanmin(JtJ_diag_cropped)
+            JtJ_diag_vmax = np.nanmax(JtJ_diag_cropped)
 
         # Plot JtJ_diag
-        JtJ_diag_vmin = np.nanmin(JtJ_diag_cropped)
-        JtJ_diag_vmax = np.nanmax(JtJ_diag_cropped)
-        im3 = axs[i, 3].imshow(JtJ_diag_cropped, cmap=cmap_plots, vmin=JtJ_diag_vmin, vmax=JtJ_diag_vmax)
-        axs[i, 3].set_title("Loss Weights")
-        fig.colorbar(im3, ax=axs[i, 3])
+        im = axs[i, idx].imshow(JtJ_diag_cropped, cmap=cmap_plots, vmin=JtJ_diag_vmin, vmax=JtJ_diag_vmax)
+        axs[i, idx].set_title("Loss Weights")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
+
+        # Plot Sensitivity
+        if sensitivity_np is not None:
+            im = axs[i, idx].imshow(sensitivity_cropped, cmap=cmap_plots, vmin=JtJ_diag_vmin, vmax=JtJ_diag_vmax)
+            axs[i, idx].set_title("Sensitivity")
+            fig.colorbar(im, ax=axs[i, idx])
+            idx += 1
 
         # Plot Error
         error_vmin = np.nanmin(weighted_error_cropped)
         error_vmax = np.nanmax(weighted_error_cropped)
-        im4 = axs[i, 4].imshow(weighted_error_cropped, cmap=cmap_error, vmin=error_vmin, vmax=error_vmax)
-        axs[i, 4].set_title("Weighted Error")
-        fig.colorbar(im4, ax=axs[i, 4])
+        im = axs[i, idx].imshow(weighted_error_cropped, cmap=cmap_error, vmin=error_vmin, vmax=error_vmax)
+        axs[i, idx].set_title("Weighted Error")
+        fig.colorbar(im, ax=axs[i, idx])
+        idx += 1
 
-        # Plot Error (Log Scale)
-        error_vmin = np.nanmin(weighted_error_cropped) + 1e-10
-        error_vmax = np.nanmax(weighted_error_cropped)
-        norm = matplotlib.colors.LogNorm(vmin=1e-5, vmax=error_vmax)
-        im4 = axs[i, 5].imshow(weighted_error_cropped, cmap=cmap_error, norm=norm)
-        axs[i, 5].set_title("Weighted Error (Log)")
-        fig.colorbar(im4, ax=axs[i, 5], norm=norm)
+        # Plot Error Weight
+        if sensitivity_np is not None:
+            error_weight_vmin = np.nanmin(error_weight_cropped)
+            error_weight_vmax = np.nanmax(error_weight_cropped)
+            im = axs[i, idx].imshow(error_weight_cropped, cmap=cmap_error, vmin=error_weight_vmin, vmax=error_weight_vmax)
+            axs[i, idx].set_title("Error Weight")
+            fig.colorbar(im, ax=axs[i, idx])
+            idx += 1
+
 
     fig.tight_layout()
     if prefix == "Train":
@@ -233,7 +264,9 @@ def evaluate(
                     weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)
                     with autocast(device.type, enabled=use_amp):
                         output = model(pseudosection, target)
-                        weighted_loss = weight_matrix * criterion(output, target)
+                        output, sensitivity = output[:, 0:-1], output[:, 1:] 
+                        # weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+                        weighted_loss = weight_matrix * criterion(output, target) + criterion(sensitivity, weight_matrix) # reduction='none'
                     batch_loss_sum += weighted_loss.sum().item()
                     current_batch_weights_count += weight_matrix.sum().item()
 
@@ -299,7 +332,9 @@ def process_batch(
                 weight_matrix = weight_matrix[..., :target_h, :target_w].unsqueeze(0)  # Crop to the target size
 
                 output = model(pseudosection, target)
-                weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+                # weighted_loss = weight_matrix * criterion(output, target) # reduction='none'
+                output, sensitivity = output[:, 0:-1], output[:, 1:]
+                weighted_loss = weight_matrix * criterion(output, target) + criterion(sensitivity, weight_matrix) # reduction='none'
 
                 current_sample_loss_sum = weighted_loss.sum()
                 # current_sample_weights_count = torch.numel(weight_matrix)
@@ -405,6 +440,7 @@ def process_epoch(
                             pseudo_masks = persistent_test_batch['pseudo_masks']
                             target_masks = persistent_test_batch['target_masks']
                             test_outputs = []
+                            test_sensitivities = []
 
                             for pseudosection, target, weight_matrix, pseudo_mask, target_mask in zip(pseudosection, target, weights_matrix, pseudo_masks, target_masks):
                                 pseudo_h, pseudo_w = pseudo_mask.tolist()
@@ -413,8 +449,11 @@ def process_epoch(
                                 pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)  # Add batch dimension
                                 target = target[..., :target_h, :target_w].unsqueeze(0)  # Add batch dimension
                                 output = model(pseudosection, target)
+                                output, sensitivity = output[:, 0:-1], output[:, 1:] 
+
 
                                 test_outputs.append(output.cpu().numpy())
+                                test_sensitivities.append(sensitivity.cpu().numpy())
 
                                 
                 model.train() # Switch back
@@ -427,6 +466,7 @@ def process_epoch(
                     output_test_np = tensors_to_numpy_list(test_outputs.cpu())
                 else:
                     output_test_np = test_outputs
+                    sensitivity_test_np = test_sensitivities
                 test_num_electrodes_list = persistent_test_batch['num_electrode'].cpu().numpy()
                 test_array_type_list = [torch.argmax(array_type).cpu().numpy() for array_type in persistent_test_batch['array_type']]
 
@@ -450,6 +490,8 @@ def process_epoch(
                             target_masks = batch['target_masks']
 
                             train_outputs_plot = []
+                            train_sensitivities_plot = []
+
 
                             for pseudosection, target, pseudo_mask, target_mask in zip(pseudosection, target, pseudo_masks, target_masks):
                                 pseudo_h, pseudo_w = pseudo_mask.tolist()
@@ -458,21 +500,24 @@ def process_epoch(
                                 pseudosection = pseudosection[..., :pseudo_h, :pseudo_w].unsqueeze(0)
                                 target = target[..., :target_h, :target_w].unsqueeze(0)
                                 output = model(pseudosection, target)
+                                output, sensitivity = output[:, 0:-1], output[:, 1:] 
                                 train_outputs_plot.append(output.cpu().numpy())
+                                train_sensitivities_plot.append(sensitivity.cpu().numpy())
                 model.train()
                 if isinstance(train_outputs_plot, Tensor):
                     output_train_np = tensors_to_numpy_list(train_outputs_plot.cpu())
                 else:
                     output_train_np = train_outputs_plot
+                    sensitivity_train_np = train_sensitivities_plot
 
 
                 plot_samples(
                     psec_test_np, target_test_np, JtJ_diag_test_np, output_test_np, test_num_electrodes_list, test_array_type_list,
-                    "Test", current_step, logging_parameters
+                    "Test", current_step, logging_parameters, sensitivity_test_np
                 )
                 plot_samples(
                     psec_train_np, target_train_np, JtJ_diag_train_np, output_train_np, train_num_electrodes_list, train_array_type_list,
-                    "Train", current_step, logging_parameters
+                    "Train", current_step, logging_parameters, sensitivity_train_np
                 )
 
             # 4. Plot overall loss curve
@@ -550,6 +595,10 @@ def train(
         }, checkpoint_path)
         print(f"Saved checkpoint: {checkpoint_path}")
 
+    # Saving the logging parameters
+    logging_parameters_path = logging_parameters.checkpoint_folder / "logging_parameters.pth"
+    torch.save(logging_parameters, logging_parameters_path)
+    print(f"Saved logging parameters: {logging_parameters_path}")
 
     print("\n--- Training Finished ---")
     if logging_parameters.loss_value and logging_parameters.test_loss_value:

@@ -443,5 +443,3 @@ def final_validation(
     print("--- Final Validation Finished ---")
     model.train() # Set back to train mode
     return metrics
-
-# {'final_avg_loss': 0.014709534911971392, 'final_mae': np.float32(0.060614437), 'final_mse': np.float32(0.010457812), 'final_rmse': np.float32(0.10226344), 'final_r2': 0.7665200233459473}
